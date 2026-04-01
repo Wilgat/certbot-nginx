@@ -1,7 +1,7 @@
 #!/bin/sh
 # =============================================================================
 # GitLab + External Nginx + Let's Encrypt Setup Script
-# Version: 1.1.0
+# Version: 1.1.1
 #
 # Self-installing (root-only) — inspired by springboot2 pattern
 # Must be run with sudo / as root. Installs to /usr/local/bin/certbot-nginx
@@ -9,7 +9,7 @@
 set -e
 
 APP_NAME="certbot-nginx"
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 REPO_USER="Wilgat"
 REPO_NAME="certbot-nginx"
 REPO_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}"
@@ -30,16 +30,17 @@ CLOUDFLARE_IPS_FILE="/etc/nginx/cloudflare-ips.conf"
 # ======================
 
 STEP=1
+TTY=0
 if [ -t 1 ]; then
     GREEN='\033[0;32m'
     YELLOW='\033[1;33m'
     RED='\033[0;31m'
     NC='\033[0m'
-    TTY=1
 else
     GREEN='' YELLOW='' RED='' NC=''
-    TTY=0
+
 fi
+[ -t 0 ] && [ -t 1 ] && TTY=1
 
 info()  { printf "${GREEN}→ %s${NC}\n" "$*" >&2; }
 warn()  { printf "${YELLOW}⚠  %s${NC}\n" "$*" >&2; }
@@ -47,10 +48,6 @@ debug() { printf "${YELLOW}[DEBUG] %s${NC}\n" "$*" >&2; }
 die() {
     printf >&2 "${RED}Error: %s${NC}\n" "$*"
     exit 1
-}
-
-is_interactive() {
-    [ -t 0 ] && [ -t 1 ]
 }
 
 step_message() {
@@ -65,12 +62,14 @@ step_message() {
 # ======================
 # SELF-INSTALL LOGIC (root-only)
 # ======================
-
+ROOT_DISPLAYED=0
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         die "This script must be run as root (use sudo)."
     fi
-    info "Running as root."
+    [ "$ROOT_DISPLAYED" = "0" ] && info "Running as root." 
+    ROOT_DISPLAYED=1
+    echo ''
 }
 
 perform_self_install() {
@@ -212,7 +211,8 @@ save_domains_to_file() {
 # Ask and Confirm Domains
 # ======================
 ask_and_confirm_domains() {
-  if ! is_interactive; then
+  if [ "$TTY" = "0" ]; then
+    debug "Non interactive mode"
     return 0
   fi
   local domains="$1"
@@ -276,7 +276,8 @@ install_certbot() {
 }
 
 get_or_set_email() {
-  if ! is_interactive; then
+  if [ "$TTY" = "0" ]; then
+    debug "Non interactive mode"
     return 0
   fi
   step_message "Configuring Let's Encrypt email"
@@ -338,7 +339,8 @@ apply_letsencrypt_standalone() {
 }
 
 get_main_domain() {
-  if ! is_interactive; then
+  if [ "$TTY" = "0" ]; then
+    debug "Non interactive mode"
     return 0
   fi
 
@@ -507,11 +509,13 @@ EOF
 # ======================
 run_full_setup() {
   check_root
+  debug "=== Basic Setup ==="
   run_basic_setup
-  if ! is_interactive; then
+  debug "=== Done basic setup ==="
+  if [ "$TTY" = "0" ]; then
+    debug "Non interactive mode"
     return 0
   fi
-
   debug "=== Starting domain loading phase ==="
   initial_domains=$(load_existing_domains)
   
@@ -523,10 +527,10 @@ run_full_setup() {
     main_domain=$(get_main_domain_from_file "$domains_to_confirm")
   fi
   
+  debug "=== Ask and confirm Domains ==="
   domains=$(ask_and_confirm_domains "$domains_to_confirm")
   save_domains_to_file "$domains"
 
-  install_certbot
   email=$(get_or_set_email)
 
   apply_letsencrypt_standalone "$domains" "$email" "$main_domain"
@@ -560,15 +564,16 @@ run_basic_setup() {
   perform_self_install "false"
   install_certbot
   install_nginx
-  info "Basic packages installed. Now run interactively:"
-  info "   sudo ${APP_NAME}"
 }
 
 check_tty_setup() {
-  if is_interactive; then
+  if [ "$TTY" = "1" ]; then
     run_full_setup
   else
+    debug "Non interactive mode"
     run_basic_setup
+    info "Basic packages installed. Now run interactively:"
+    info "   sudo ${APP_NAME}"
   fi
 }
 
