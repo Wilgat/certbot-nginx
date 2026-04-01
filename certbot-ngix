@@ -1,0 +1,605 @@
+#!/bin/sh
+# =============================================================================
+# GitLab + External Nginx + Let's Encrypt Setup Script
+# Version: 1.1.0
+#
+# Self-installing (root-only) — inspired by springboot2 pattern
+# Must be run with sudo / as root. Installs to /usr/local/bin/certbot-nginx
+# =============================================================================
+set -e
+
+APP_NAME="certbot-nginx"
+SCRIPT_VERSION="1.1.0"
+REPO_USER="Wilgat"
+REPO_NAME="certbot-nginx"
+REPO_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}"
+
+GLOBAL_BIN="/usr/local/bin"
+INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
+
+# ======================
+# FILE PATHS
+# ======================
+
+DOMAINS_FILE="/etc/letsencrypt/domains.conf"
+EMAIL_FILE="/etc/nginx/letsencrypt-email.conf"
+CLOUDFLARE_IPS_FILE="/etc/nginx/cloudflare-ips.conf"
+
+# ======================
+# COLORS & HELPERS
+# ======================
+
+STEP=1
+if [ -t 1 ]; then
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    RED='\033[0;31m'
+    NC='\033[0m'
+    TTY=1
+else
+    GREEN='' YELLOW='' RED='' NC=''
+    TTY=0
+fi
+
+info()  { printf "${GREEN}→ %s${NC}\n" "$*" >&2; }
+warn()  { printf "${YELLOW}⚠  %s${NC}\n" "$*" >&2; }
+debug() { printf "${YELLOW}[DEBUG] %s${NC}\n" "$*" >&2; }
+die() {
+    printf >&2 "${RED}Error: %s${NC}\n" "$*"
+    exit 1
+}
+
+is_interactive() {
+    [ -t 0 ] && [ -t 1 ]
+}
+
+step_message() {
+    echo "" >&2
+    echo "==============================================================" >&2
+    printf "${GREEN}%s.  %s${NC}\n" "$STEP" "$1" >&2
+    echo "==============================================================" >&2
+    echo "" >&2
+    STEP=$((STEP + 1))
+}
+
+# ======================
+# SELF-INSTALL LOGIC (root-only)
+# ======================
+
+check_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        die "This script must be run as root (use sudo)."
+    fi
+    info "Running as root."
+}
+
+perform_self_install() {
+    local force="$1"
+
+    if [ -x "${INSTALL_PATH}" ] && [ "$force" != "true" ]; then
+        return 0
+    fi
+
+    if [ "$force" = "true" ]; then
+        info "Force reinstall requested — overwriting ${INSTALL_PATH}..."
+    else
+        info "${APP_NAME} not found in ${INSTALL_PATH} → performing self-install..."
+    fi
+
+    mkdir -p "${GLOBAL_BIN}" || die "Cannot create ${GLOBAL_BIN}"
+
+    local tmp
+    tmp=$(mktemp "/tmp/${APP_NAME}-install-XXXXXXXX") || die "mktemp failed"
+
+    info "Downloading latest version from ${REPO_URL}..."
+    curl -fsSL "${REPO_URL}" -o "${tmp}" || {
+        rm -f "${tmp}"
+        die "Download failed. Check your REPO_URL and internet connection."
+    }
+
+    # Basic sanity check: must look like a shell script
+    if ! head -c 10 "${tmp}" | grep -q '^#!/bin/sh'; then
+        rm -f "${tmp}"
+        die "Downloaded file does not appear to be a valid shell script."
+    fi
+
+    chmod 755 "${tmp}" || die "chmod failed"
+
+    if mv -f "${tmp}" "${INSTALL_PATH}"; then
+        info "✅ Successfully installed/updated ${APP_NAME} to ${INSTALL_PATH}"
+        if [ "$force" = "true" ]; then
+            info "Force reinstall completed."
+        else
+            info "You can now run it simply with: ${APP_NAME}"
+        fi
+    else
+        rm -f "${tmp}"
+        die "Failed to move script to ${INSTALL_PATH}"
+    fi
+}
+
+# ======================
+# UTILITY FUNCTIONS
+# ======================
+
+show_usage() {
+  cat << EOF
+Usage: ${APP_NAME} [OPTION]
+
+Options:
+  --help, -h              Show this help message
+  --version, -v           Show script version
+  --domains               Display current domains
+  --email                 Display current Let's Encrypt email
+  --nginx-conf            Re-generate only Nginx configuration files
+  --force-reinstall       Force download and reinstall the script itself to /usr/local/bin
+  (no option)             Run full setup (default)
+EOF
+  exit 0
+}
+
+show_version() {
+  echo "${APP_NAME} - Nginx + Let's Encrypt Setup Script"
+  echo "Version ${SCRIPT_VERSION}"
+  exit 0
+}
+
+show_domains() {
+  if [ -f "$DOMAINS_FILE" ]; then
+    echo "=== Saved Domains in ${DOMAINS_FILE} ==="
+    cat "$DOMAINS_FILE"
+  else
+    echo "No domains file found at ${DOMAINS_FILE}"
+  fi
+  exit 0
+}
+
+show_email() {
+  if [ -f "$EMAIL_FILE" ]; then
+    echo "Let's Encrypt email: $(cat "$EMAIL_FILE")"
+  else
+    echo "No email configured yet at ${EMAIL_FILE}"
+  fi
+  exit 0
+}
+
+load_existing_domains() {
+    debug "Checking domains file: ${DOMAINS_FILE}"
+    if [ -f "$DOMAINS_FILE" ]; then
+        local content
+        content=$(tr -s ' \t\n\r' ' ' < "$DOMAINS_FILE" | sed 's/^ *//;s/ *$//' | tr -d '\n')
+        debug "Content from file: '${content}'"
+        echo "$content"
+    else
+        debug "File NOT found → starting with empty list"
+        echo ""
+    fi
+}
+
+get_main_domain_from_file() {
+    local domains="$1"
+    if [ -n "$domains" ]; then
+        echo "$domains" | awk '{print $1}'
+    else
+        echo ""
+    fi
+}
+
+display_current_domains() {
+  local domains="$1"
+  local count=$(echo "$domains" | wc -w | tr -d ' ')
+  echo ""
+  echo "=== Current domains (${count} total) ===" >&2
+  if [ -n "$domains" ] && [ "$domains" != "" ]; then
+    for d in $domains; do
+      echo " - $d" >&2
+    done
+  else
+    echo " (no domains configured yet)" >&2
+  fi
+  echo "" >&2
+}
+
+save_domains_to_file() {
+  local domain_list="$1"
+  mkdir -p /etc/letsencrypt
+  echo "$domain_list" | tr ' ' '\n' > "$DOMAINS_FILE"
+  chmod 644 "$DOMAINS_FILE"
+  info "Domains saved to ${DOMAINS_FILE}"
+}
+
+# ======================
+# Ask and Confirm Domains
+# ======================
+ask_and_confirm_domains() {
+  if ! is_interactive; then
+    return 0
+  fi
+  local domains="$1"
+  debug "Entering domain confirmation phase with: '${domains}'"
+
+  while true; do
+    display_current_domains "$domains"
+
+    read -rp "Do you want to add more domains? (yes/no): " add_more
+    add_more=$(echo "$add_more" | tr '[:upper:]' '[:lower:]')
+
+    if [ "$add_more" = "no" ] || [ "$add_more" = "n" ]; then
+      info "✅ Domains confirmed."
+      echo "$domains"
+      return
+    fi
+
+    echo "" >&2
+    info "Enter additional domains one by one (press Enter on empty line when done):"
+
+    while true; do
+      read -rp "  Domain: " new_domain
+      [ -z "$new_domain" ] && break
+
+      new_domain=$(echo "$new_domain" | tr -dc 'a-zA-Z0-9.-' | tr '[:upper:]' '[:lower:]')
+      [ -z "$new_domain" ] && continue
+
+      local found=0
+      for existing in $domains; do
+        if [ "$existing" = "$new_domain" ]; then
+          found=1
+          break
+        fi
+      done
+
+      if [ $found -eq 0 ]; then
+        domains="$domains $new_domain"
+      else
+        debug "Domain '${new_domain}' already exists → skipped."
+      fi
+    done
+
+    domains=$(echo "$domains" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+    debug "Updated domains after adding: '${domains}'"
+  done
+}
+
+# ======================
+# CORE SETUP FUNCTIONS
+# ======================
+install_certbot() {
+  step_message "Installing certbot (if needed)"
+  if ! command -v certbot >/dev/null 2>&1; then
+    info "certbot not found → installing..."
+    apt-get update -qq
+    apt-get install -y certbot
+    info "certbot installed."
+  else
+    info "certbot is already installed."
+  fi
+}
+
+get_or_set_email() {
+  if ! is_interactive; then
+    return 0
+  fi
+  step_message "Configuring Let's Encrypt email"
+  if [ -f "$EMAIL_FILE" ]; then
+    email=$(cat "$EMAIL_FILE" | tr -d ' \t\n\r')
+    if [ -n "$email" ]; then
+      info "Using saved email: $email"
+      echo "$email"
+      return
+    fi
+  fi
+
+  while true; do
+    read -rp "Enter your email address for Let's Encrypt: " email
+    [ -n "$email" ] && break
+    warn "Email cannot be empty."
+  done
+
+  mkdir -p /etc/nginx
+  echo "$email" > "$EMAIL_FILE"
+  chmod 600 "$EMAIL_FILE"
+  info "Email saved."
+  echo "$email"
+}
+
+apply_letsencrypt_standalone() {
+  local domains="$1"
+  local email="$2"
+  local main_domain="$3"
+
+  step_message "Applying Let's Encrypt certificates (standalone mode)"
+
+  info "Stopping any service on port 80..."
+  systemctl stop nginx 2>/dev/null || true
+  fuser -k 80/tcp 2>/dev/null || true
+  sleep 2
+
+  local other_domains=$(echo "$domains" | tr ' ' '\n' | grep -v "^$main_domain$" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+  local cert_domains="$main_domain $other_domains"
+  cert_domains=$(echo "$cert_domains" | tr -s ' ' | sed 's/^ *//;s/ *$//')
+
+  debug "Final domains list for certbot: '${cert_domains}'"
+  local cert_domains_comma=$(echo "$cert_domains" | tr ' ' ',')
+
+  info "Requesting certificates with ${main_domain} as primary domain"
+
+  certbot certonly --standalone \
+    --email "$email" \
+    --agree-tos \
+    --non-interactive \
+    --allow-subset-of-names \
+    --domains "$cert_domains_comma" || die "Certbot failed to obtain certificates."
+
+  if [ ! -f "/etc/letsencrypt/live/${main_domain}/fullchain.pem" ]; then
+    die "Certificate files were not created under ${main_domain}"
+  fi
+
+  info "✅ Let's Encrypt certificates obtained successfully under ${main_domain}"
+}
+
+get_main_domain() {
+  if ! is_interactive; then
+    return 0
+  fi
+
+  local main_domain=""
+
+  step_message "Setting main domain"
+
+  echo "" >&2
+  info "Please enter your PRIMARY domain (this will be for certbot application):"
+  while true; do
+    read -rp "  Primary domain (e.g. git.crms.hk): " input
+    main_domain=$(echo "$input" | tr -dc 'a-zA-Z0-9.-' | tr '[:upper:]' '[:lower:]')
+
+    if [ -n "$main_domain" ] && ! echo "$main_domain" | grep -qE '(example|localhost|127\.0\.0\.1)'; then
+      info "✅ Using primary domain: ${main_domain}"
+      break
+    fi
+    warn "Please enter a valid domain name (cannot be empty or placeholder)."
+  done
+
+  echo "$main_domain"
+}
+
+install_nginx() {
+  step_message "Installing Nginx (if needed)"
+  if ! command -v nginx >/dev/null 2>&1; then
+    info "Nginx not found → installing..."
+    apt-get update -qq
+    apt-get install -y nginx
+    info "Nginx installed."
+  else
+    info "Nginx is already installed."
+  fi
+}
+
+setup_nginx_configs() {
+  local domains="$1"
+  local main_domain="$2"
+  local cert_path="/etc/letsencrypt/live/${main_domain}"
+
+  step_message "Setting up Nginx configurations with Cloudflare IP restriction"
+
+  rm -f /etc/nginx/sites-enabled/default
+  mkdir -p /var/www/letsencrypt
+
+  # Create unique Cloudflare IPs include file (updated for 2026 ranges)
+  cat > "${CLOUDFLARE_IPS_FILE}" << 'EOF'
+# Cloudflare IP ranges - Only these IPs are allowed to reach the server
+# Last updated: April 2026
+# Source: https://www.cloudflare.com/ips/
+
+# IPv4
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+
+# IPv6
+set_real_ip_from 2400:cb00::/32;
+set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;
+set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;
+set_real_ip_from 2a06:98c0::/32;
+set_real_ip_from 2c0f:f248::/32;
+
+real_ip_header CF-Connecting-IP;
+real_ip_recursive on;
+EOF
+
+  chmod 644 "${CLOUDFLARE_IPS_FILE}"
+
+  # HTTP redirect + ACME challenge (no Cloudflare restriction here)
+  cat > /etc/nginx/sites-available/redirect.conf << 'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        try_files $uri =404;
+    }
+
+    return 301 https://$server_name$request_uri;
+}
+EOF
+
+  ln -sf /etc/nginx/sites-available/redirect.conf /etc/nginx/sites-enabled/
+
+  # Per-domain HTTPS configs with Cloudflare-only restriction
+  for domain in $domains; do
+    mkdir -p "/var/www/${domain}"
+    cat > "/var/www/${domain}/index.html" << EOF
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>${domain}</title>
+<style>body{font-family:Arial,sans-serif;text-align:center;padding:100px;background:#f4f4f4;}h1{color:#2c3e50;}</style>
+</head>
+<body>
+<h1>${domain}</h1>
+<p>This is a static website.</p>
+</body>
+</html>
+EOF
+
+    cat > "/etc/nginx/sites-available/${domain}.conf" << EOF
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${domain};
+
+    root /var/www/${domain};
+    index index.html;
+
+    ssl_certificate ${cert_path}/fullchain.pem;
+    ssl_certificate_key ${cert_path}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers off;
+
+    # Include Cloudflare real_ip and allow only Cloudflare IPs
+    include ${CLOUDFLARE_IPS_FILE};
+
+    # Allow only Cloudflare (deny everything else)
+    allow all;   # overridden by the allow rules above + deny below
+    deny all;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        try_files \$uri =404;
+    }
+
+    # Optional: you can add more locations here later (e.g. proxy_pass to GitLab)
+}
+EOF
+    ln -sf "/etc/nginx/sites-available/${domain}.conf" /etc/nginx/sites-enabled/
+  done
+
+  info "Nginx configuration files created with Cloudflare IP restriction."
+  info "→ Only Cloudflare IPs can now access your sites (direct access blocked)."
+}
+
+# ======================
+# FULL SETUP (Interactive only)
+# Execution Order (for full installton and TTY=1, setup):
+# 1. Root check
+# 2. Basic Setup
+# 3. Domain handling early
+# 4. Handle Let's Encrypt email
+# 5. Apply Let's Encrypt certificates using standalone + certonly
+# 6. Setup all nginx configs
+# 7. Stop → test → restart nginx
+# ======================
+run_full_setup() {
+  check_root
+  run_basic_setup
+  if ! is_interactive; then
+    return 0
+  fi
+
+  debug "=== Starting domain loading phase ==="
+  initial_domains=$(load_existing_domains)
+  
+  if [ -z "$initial_domains" ]; then
+    main_domain=$(get_main_domain)
+    domains_to_confirm="$main_domain"
+  else
+    domains_to_confirm="$initial_domains"
+    main_domain=$(get_main_domain_from_file "$domains_to_confirm")
+  fi
+  
+  domains=$(ask_and_confirm_domains "$domains_to_confirm")
+  save_domains_to_file "$domains"
+
+  install_certbot
+  email=$(get_or_set_email)
+
+  apply_letsencrypt_standalone "$domains" "$email" "$main_domain"
+
+  install_nginx
+
+  step_message "Preparing Nginx"
+  systemctl stop nginx 2>/dev/null || true
+
+  setup_nginx_configs "$domains" "$main_domain"
+
+  nginx -t && info "Nginx config test passed." || die "Nginx config test failed!"
+  systemctl restart nginx
+  info "Nginx restarted successfully."
+
+  echo ""
+  info "🎉 Full setup completed successfully!"
+  info "   Cloudflare IP restriction is now active on all domains."
+}
+
+# ======================
+# BASIC SETUP for curl | bash (non-interactive)
+# Execution Order (for full installton and TTY=1, setup):
+# 1. Root check
+# 2. Perform self-install
+# 3. Install certbot
+# 4. Install nginx
+# ======================
+run_basic_setup() {
+  check_root
+  perform_self_install "false"
+  install_certbot
+  install_nginx
+  info "Basic packages installed. Now run interactively:"
+  info "   sudo ${APP_NAME}"
+}
+
+check_tty_setup() {
+  if is_interactive; then
+    run_full_setup
+  else
+    run_basic_setup
+  fi
+}
+
+# ======================
+# ARGUMENT PARSING
+# ======================
+
+case "$1" in
+  --help|-h)          show_usage ;;
+  --version|-v)       show_version ;;
+  --domains)          show_domains ;;
+  --email)            show_email ;;
+  --nginx-conf)
+    check_root
+    domains=$(load_existing_domains)
+    [ -z "$domains" ] && die "No domains found. Run full setup first."
+    main_domain=$(get_main_domain_from_file "$domains")
+    [ -z "$main_domain" ] && die "Could not determine main domain."
+    setup_nginx_configs "$domains" "$main_domain"
+    info "✅ Nginx configs regenerated using main domain: ${main_domain}"
+    exit 0
+    ;;
+  --setup)
+    run_full_setup
+    ;;
+  --force-reinstall)
+    check_root
+    perform_self_install "true"
+    info "Force reinstall completed. You can now run '${APP_NAME}' for full setup."
+    exit 0
+    ;;
+  "")                 check_tty_setup ;;
+  *)                  die "Unknown option. Use --help." ;;
+esac
