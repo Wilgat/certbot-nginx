@@ -87,7 +87,7 @@ The script will guide you through:
 
 - `--quiet`, `-q` — Suppress non-error output
 - `--json` — Machine-readable JSON output (implies `--quiet`)
-- `--force` — Force reinstall or override existing installation
+- `--no-cloudflare` — Not using cloudflare
 
 ---
 
