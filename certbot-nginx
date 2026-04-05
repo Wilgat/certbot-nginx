@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.6.0
+# certbot-nginx – version 1.7.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -10,7 +10,7 @@
 #
 # GitHub: https://github.com/Wilgat/certbot-nginx
 #
-# ────────────────────────────────────────────────
+# ────────────────────z────────────────────────────
 # STRICT CIAO DEFENSIVE CODING STYLE - FULLY APPLIED
 # ────────────────────────────────────────────────
 #
@@ -173,7 +173,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.6.0"
+VERSION="1.7.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -251,13 +251,13 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 #    {"type":"error","message":"This script must be run as root","code":"permission_denied"}
 #
 # 6. Version
-#    {"type":"version","app":"certbot-nginx","version":"1.6.0","shell":"sh"}
+#    {"type":"version","app":"certbot-nginx","version":"1.7.0","shell":"sh"}
 #
 # 7. About / Diagnostics
-#    {"type":"about","version":"1.6.0","installed":true,"global_version":"1.6.0","shell":"bash","interactive":true,"user":"root"}
+#    {"type":"about","version":"1.7.0","installed":true,"global_version":"1.7.0","shell":"bash","interactive":true,"user":"root"}
 #
 # 8. Version Check
-#    {"type":"version_check","local_version":"1.5.0","remote_version":"1.6.0","is_latest":false}
+#    {"type":"version_check","local_version":"1.5.0","remote_version":"1.7.0","is_latest":false}
 #
 # 9. Domains Command
 #    {"type":"success","domains":["git.example.com","app.example.com","api.example.com"],"count":3,"primary":"git.example.com"}
@@ -583,6 +583,37 @@ empty_line() {
 
 double_line() {
     output_text "plain" "=============================================================="
+}
+
+# =============================================================================
+# ui_msg() - Print interactive UI messages to stderr (never captured by $( ))
+# =============================================================================
+#
+# Use this for ALL prompts, info, success, warnings inside get_main_domain()
+# and ask_and_confirm_domains(). It ensures command substitution only receives
+# the clean domain list, never UI text.
+#
+# Respects --quiet and --json (silent in those modes).
+# =============================================================================
+
+ui_msg() {
+    output_text "plain" "$*" >&2
+}
+
+ui_info() {
+    output_text "info" "$*" >&2
+}
+
+ui_success() {
+    output_text "success" "$*" >&2
+}
+
+ui_warn() {
+    output_text "warn" "$*" >&2
+}
+
+ui_empty_line() {
+    output_text "plain" "" >&2
 }
 
 # =============================================================================
@@ -1652,6 +1683,7 @@ get_main_domain_from_file() {
 #   • Clearly indicate the total count of domains.
 #   • Output should be clean and readable during interactive prompts.
 #   • The first domain will later become the Primary/Main domain.
+#   • Prints ALL output to stderr so it is never captured by command substitution.
 #
 # Important:
 #   This function is called repeatedly during domain confirmation loop.
@@ -1672,18 +1704,18 @@ display_current_domains() {
     local count
     count=$(echo "$domains" | wc -w | tr -d ' ')
 
-    empty_line
-    msg "=== Current domains (${count} total) ==="
+    ui_empty_line
+    ui_msg "=== Current domains (${count} total) ==="
 
     if [ -n "$domains" ] && [ "$domains" != "" ]; then
         for d in $domains; do
-            msg " - ${d}"
+            ui_msg " - ${d}"
         done
     else
-        msg " (no domains configured yet)"
+        ui_msg " (no domains configured yet)"
     fi
 
-    empty_line
+    ui_empty_line
 }
 
 # =============================================================================
@@ -1703,6 +1735,7 @@ display_current_domains() {
 #   • File permissions must be 644.
 #   • This function is the final step before using the domain list for
 #     certificate request and nginx configuration.
+#   • Prints ALL output to stderr so it is never captured by command substitution.
 #
 # Important:
 #   The re-arrangement (putting main domain first) must happen BEFORE calling
@@ -1721,8 +1754,13 @@ save_domains_to_file() {
 
     ensure_letsencrypt_structure
 
-    # Save domains one per line
-    echo "$domain_list" | tr ' ' '\n' > "$DOMAINS_FILE"
+    # === DEFENSIVE SANITY CHECK ===
+    if echo "$domain_list" | grep -qE '(\[INFO\]|\[OK\]|\[WARN\]|\[ERROR\]|\u2705|===|Current domains|Primary domain accepted)'; then
+        die "BUG: Domains list contains UI output. This should never happen. Please report this issue."
+    fi
+
+    # Save domains one per line (clean)
+    echo "$domain_list" | tr ' ' '\n' | sed '/^$/d' > "$DOMAINS_FILE"
     chmod 644 "$DOMAINS_FILE"
 
     # Respect quiet and json modes
@@ -1751,6 +1789,7 @@ save_domains_to_file() {
 #   • Must use central output functions (display_current_domains, msg, info, etc.).
 #   • After user finishes adding domains, the final list is returned with main
 #     domain still at the front (re-arrangement happens in run_interactive_setup).
+#   • Prints ALL output to stderr so it is never captured by command substitution.
 #
 # Design Intent:
 #   Main domain = User decision (get_main_domain)
@@ -1775,12 +1814,12 @@ ask_and_confirm_domains() {
         add_more=$(echo "$add_more" | tr '[:upper:]' '[:lower:]')
 
         if [ "$add_more" = "no" ] || [ "$add_more" = "n" ]; then
-            info "✅ Domains confirmed."
+            ui_info "✅ Domains confirmed."
             echo "$domains"
             return 0
         fi
 
-        info "Enter additional domains one by one (press Enter on empty line when done):"
+        ui_info "Enter additional domains one by one (press Enter on empty line when done):"
 
         while true; do
             read -rp "  Domain: " new_domain
@@ -1795,14 +1834,14 @@ ask_and_confirm_domains() {
             for existing in $domains; do
                 if [ "$existing" = "$new_domain" ]; then
                     found=1
-                    warn "Domain ${new_domain} is already in the list."
+                    ui_warn "Domain ${new_domain} is already in the list."
                     break
                 fi
             done
 
             if [ $found -eq 0 ]; then
                 domains="$domains $new_domain"
-                info "Added: ${new_domain}"
+                ui_info "Added: ${new_domain}"
             fi
         done
 
@@ -2251,6 +2290,7 @@ apply_letsencrypt_standalone() {
 #   • It is NOT determined by list position.
 #   • This value becomes the Common Name (CN) of the certificate.
 #   • All other domains added later become SANs only.
+#   • Prints ALL output to stderr so it is never captured by command substitution.
 #
 # Behavior:
 #   • Only runs in interactive TTY mode.
@@ -2273,8 +2313,8 @@ get_main_domain() {
 
     local main_domain=""
 
-    echo "" >&2
-    info "Please enter your PRIMARY domain (this will be the main certificate name):"
+    ui_empty_line
+    ui_info "Please enter your PRIMARY domain (this will be the main certificate name):"
     
     while true; do
         read -rp "  Primary domain (e.g. git.crms.hk): " input
@@ -2284,13 +2324,13 @@ get_main_domain() {
 
         if [ -n "$main_domain" ] && \
            ! echo "$main_domain" | grep -qE '(example|localhost|127\.0\.0\.1|local|test)'; then
-            info "✅ Primary domain accepted: ${main_domain}"
+            ui_success "✅ Primary domain accepted: ${main_domain}"
             echo "$main_domain"
             return 0
         fi
 
-        warn "Please enter a valid domain name."
-        warn "It cannot be empty, localhost, example.com, or similar placeholders."
+        ui_warn "Please enter a valid domain name."
+        ui_warn "It cannot be empty, localhost, example.com, or similar placeholders."
     done
 }
 
