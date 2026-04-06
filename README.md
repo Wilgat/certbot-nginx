@@ -1,6 +1,6 @@
 # certbot-nginx
 
-[![Version](https://img.shields.io/badge/Version-1.7.0-blue?style=flat-square)](https://github.com/Wilgat/countdown)
+[![Version](https://img.shields.io/badge/Version-1.8.0-blue?style=flat-square)](https://github.com/Wilgat/countdown)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 **Automated setup for Nginx + Let's Encrypt + Cloudflare IP restriction**

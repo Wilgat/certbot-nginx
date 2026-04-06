@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.7.0
+# certbot-nginx – version 1.8.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -173,7 +173,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.7.0"
+VERSION="1.8.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -251,13 +251,13 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 #    {"type":"error","message":"This script must be run as root","code":"permission_denied"}
 #
 # 6. Version
-#    {"type":"version","app":"certbot-nginx","version":"1.7.0","shell":"sh"}
+#    {"type":"version","app":"certbot-nginx","version":"1.8.0","shell":"sh"}
 #
 # 7. About / Diagnostics
-#    {"type":"about","version":"1.7.0","installed":true,"global_version":"1.7.0","shell":"bash","interactive":true,"user":"root"}
+#    {"type":"about","version":"1.8.0","installed":true,"global_version":"1.8.0","shell":"bash","interactive":true,"user":"root"}
 #
 # 8. Version Check
-#    {"type":"version_check","local_version":"1.5.0","remote_version":"1.7.0","is_latest":false}
+#    {"type":"version_check","local_version":"1.5.0","remote_version":"1.8.0","is_latest":false}
 #
 # 9. Domains Command
 #    {"type":"success","domains":["git.example.com","app.example.com","api.example.com"],"count":3,"primary":"git.example.com"}
@@ -2030,7 +2030,7 @@ get_or_set_email() {
         email=$(tr -d ' \t\n\r' < "$EMAIL_FILE")
 
         if [ -n "$email" ]; then
-            info "Using saved Let's Encrypt email: ${email}"
+            ui_info "Using saved Let's Encrypt email: ${email}"
             echo "$email"
             return 0
         fi
@@ -2054,14 +2054,14 @@ get_or_set_email() {
             break
         fi
 
-        warn "Email address cannot be empty."
+        ui_warn "Email address cannot be empty."
     done
 
     # Save email with strict permissions
     echo "$email" > "$EMAIL_FILE"
     chmod 600 "$EMAIL_FILE"
 
-    info "Email address saved to ${EMAIL_FILE}"
+    ui_info "Email address saved to ${EMAIL_FILE}"
     echo "$email"
 }
 
@@ -2294,7 +2294,7 @@ apply_letsencrypt_standalone() {
 #
 # Behavior:
 #   • Only runs in interactive TTY mode.
-#   • Rejects placeholder domains (example, localhost, 127.0.0.1).
+#   • Rejects placeholder domains (example, localhost, 1.8.0.0.1).
 #   • Cleans and lowercases the domain.
 #   • Returns the clean main domain chosen by the user.
 #
@@ -2310,7 +2310,6 @@ get_main_domain() {
     if [ "$TTY" = "0" ]; then
         die "Cannot get main domain in non-interactive mode. Run interactively."
     fi
-
     local main_domain=""
 
     ui_empty_line
@@ -2471,6 +2470,49 @@ install_nginx() {
 }
 
 # =============================================================================
+# fix_docroot_permissions() - Set correct ownership for web files
+# =============================================================================
+#
+# Purpose:
+#   Ensures all document roots and HTML files are owned by www-data:www-data
+#   (the default nginx user on Debian/Ubuntu and most Linux distros).
+#
+#   This prevents permission issues when serving static files.
+#   Runs after setup_nginx_configs() so all directories and files exist.
+#
+# Defensive:
+#   - Only runs as root
+#   - Uses -R (recursive)
+#   - Graceful on non-Debian systems (still tries common www-data)
+#
+# !!! DO NOT SIMPLIFY - permission issues are very common after certbot-nginx runs !!!
+# =============================================================================
+
+fix_docroot_permissions() {
+    if [ "$(id -u)" -ne 0 ]; then
+        return 0
+    fi
+
+    info "Fixing permissions: setting www-data:www-data ownership on document roots..."
+
+    # Main docroots for all domains
+    if [ -d "/var/www" ]; then
+        chown -R www-data:www-data /var/www 2>/dev/null || true
+    fi
+
+    # ACME challenge directory (used for renewals)
+    if [ -d "/var/www/letsencrypt" ]; then
+        chown -R www-data:www-data /var/www/letsencrypt 2>/dev/null || true
+    fi
+
+    # Ensure directories are readable/executable and files are readable
+    find /var/www -type d -exec chmod 755 {} + 2>/dev/null || true
+    find /var/www -type f -exec chmod 644 {} + 2>/dev/null || true
+
+    success "Document root permissions fixed (www-data:www-data)"
+}
+
+# =============================================================================
 # setup_nginx_configs() - Final Nginx Configuration (After Certificates)
 # =============================================================================
 #
@@ -2540,8 +2582,8 @@ setup_nginx_configs() {
     rm -f /etc/nginx/sites-enabled/default
 
     # Ensure web roots exist
-    mkdir -p /var/www/letsencrypt
-    chmod 755 /var/www/letsencrypt
+    mkdir -p /var/www
+    chmod 755 /var/www
 
     # =============================================================================
     # Cloudflare IP Include File (Updated April 2026)
@@ -2608,6 +2650,7 @@ EOF
     # =============================================================================
     # Global HTTP Redirect + ACME Challenge Server
     # =============================================================================
+    info "Creating Global HTTP Redirect ..."
     cat > /etc/nginx/sites-available/redirect.conf << 'EOF'
 server {
     listen 80;
@@ -2628,12 +2671,13 @@ EOF
     ln -sf /etc/nginx/sites-available/redirect.conf /etc/nginx/sites-enabled/
 
     # =============================================================================
-    # Per-Domain HTTPS Configurations
+    # Per-Domain Creating per-domain config, DocRoot and HTML Samples
     # =============================================================================
-    info "Creating per-domain HTTPS server blocks..."
+    info "Creating per-domain conf, DocRoot and HTML Samples..."
 
     for domain in $domains; do
         # Create document root and basic placeholder page
+        info "Creating DocRoot: /var/www/${domain} and HTML samples.."
         mkdir -p "/var/www/${domain}"
         cat > "/var/www/${domain}/index.html" << EOF
 <!DOCTYPE html>
@@ -2654,7 +2698,7 @@ EOF
 </html>
 EOF
         chmod -R 755 "/var/www/${domain}"
-
+        info "Creating confifg /etc/nginx/sites-available/${domain}.conf ..."
         # HTTPS server block with Cloudflare protection
         cat > "/etc/nginx/sites-available/${domain}.conf" << EOF
 server {
@@ -2704,6 +2748,9 @@ EOF
         ln -sf "/etc/nginx/sites-available/${domain}.conf" /etc/nginx/sites-enabled/
     done
 
+    # Fix permissions for all document roots and files
+    fix_docroot_permissions
+
     info "Nginx configuration files created successfully."
     info "→ Only Cloudflare IPs can access the sites (direct access blocked)."
     info "→ Certificate used: ${cert_path}/fullchain.pem (main domain: ${main_domain})"
@@ -2724,6 +2771,7 @@ EOF
 #   • ask_and_confirm_domains() is ONLY used to let the user ADD extra domains (SANs).
 #   • After confirmation, the script MUST re-arrange the final domain list so that
 #     the user-chosen main domain is placed FIRST.
+#   • Prints ALL output to stderr so it is never captured by command substitution.
 #
 # Platform Notes (2026):
 #   • install_certbot() and install_nginx() now support multiple platforms.
@@ -2774,22 +2822,34 @@ run_interactive_setup() {
     local domains
     local domains_to_confirm
 
-    # Get the main domain interactively (authoritative user choice)
-    main_domain=$(get_main_domain)
-    
-    # Prepare list for confirmation
-    domains_to_confirm="$main_domain"
-    
-    # Let user add extra domains (SANs)
+    domains=$(load_existing_domains)
+    [ ! -z "$domains" ] && main_domain=$(get_main_domain_from_file "$domains")
+    if [ -z "$main_domain" ]; then
+        # Get the main domain interactively (authoritative user choice)
+        main_domain=$(get_main_domain)
+    else
+        ui_info "Using saved Let's Encrypt main domain: ${main_domain}"
+    fi
+
+    # Prepare full list for confirmation (existing domains + force main domain first)
+    if [ -n "$domains" ]; then
+        # Re-arrange so main domain is always first (in case it moved)
+        domains=$(echo "$domains" | tr ' ' '\n' | grep -v "^$main_domain$" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+        domains_to_confirm="$main_domain $domains"
+        domains_to_confirm=$(echo "$domains_to_confirm" | tr -s ' ' | sed 's/^ *//;s/ *$//')
+    else
+        domains_to_confirm="$main_domain"
+    fi
+
+    # Let user review and add more domains (SANs)
     domains=$(ask_and_confirm_domains "$domains_to_confirm")
-    
-    # Force user-chosen main domain to the front
+
+    # Final force: make sure user-chosen main domain is first
     if [ -n "$main_domain" ] && [ -n "$domains" ]; then
         domains=$(echo "$domains" | tr ' ' '\n' | grep -v "^$main_domain$" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
         domains="$main_domain $domains"
         domains=$(echo "$domains" | tr -s ' ' | sed 's/^ *//;s/ *$//')
     fi
-
     save_domains_to_file "$domains"
 
     # ====================== NEW: Cloudflare Choice ======================
