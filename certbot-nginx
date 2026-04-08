@@ -3134,6 +3134,7 @@ create_nginx_adm_user() {
 #   • Never rm -rf real config directories
 #   • Ownership: nginx-adm:root (as per your test)
 #   • Permissions: 775 for practical group access
+#   • not working in /bin/sh mkdir -p /etc/nginx/{sites-available,sites-enabled}
 #
 # !!! MUST BE CALLED AFTER create_nginx_adm_user() !!!
 # =============================================================================
@@ -3142,7 +3143,10 @@ setup_nginx_adm_ownership() {
     info "Setting nginx-adm ownership and symlinks..."
 
     # 1. Ensure real directories exist under nginx (never delete content)
-    mkdir -p /etc/nginx/{sites-available,sites-enabled}
+    # Under /bin/sh, the following is not working, you should do it one by one
+    # mkdir -p /etc/nginx/{sites-available,sites-enabled}
+    mkdir -p /etc/nginx/sites-available
+    mkdir -p /etc/nginx/sites-enabled
 
 
     # 3. Transfer ownership
