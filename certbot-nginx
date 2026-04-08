@@ -3194,24 +3194,47 @@ setup_nginx_adm_ownership() {
 # CRITICAL FUNCTION - PART OF nginx-adm LEAST-PRIVILEGE MODEL
 #
 # Purpose:
-#   Creates a sudoers.d file that allows nginx-adm to control nginx service
-#   without password, but only for specific systemctl commands.
+#   Creates or updates the sudoers.d file for nginx-adm with restricted permissions.
 #
-# Rules:
-#   • File: /etc/sudoers.d/nginx-adm (mode 0440)
-#   • Only allows: systemctl start|stop|reload|restart nginx
-#   • Uses NOPASSWD
-#   • Must end with a blank line (sudoers requirement)
-#   • Idempotent: always overwrites with clean content
+# New Behavior (as requested):
+#   • If /etc/sudoers.d/nginx-adm already exists, it is backed up to /etc/sudoers.bak/
+#     using dated format: nginx-adm.YYYYMMDD-N.bak (N increments per day)
+#   • Creates the backup directory if it doesn't exist
+#   • Always writes fresh, clean sudoers content after backup
+#   • Validates syntax with visudo when possible
+#   • File must end with a blank line (sudoers requirement)
 #
 # !!! MUST BE CALLED AFTER create_nginx_adm_user() !!!
 # =============================================================================
 
 setup_restricted_sudoers() {
     local sudoers_file="/etc/sudoers.d/nginx-adm"
+    local backup_dir="/etc/sudoers.bak"
 
     info "Setting up restricted sudoers for nginx-adm..."
 
+    # Create backup directory if it doesn't exist
+    mkdir -p "${backup_dir}" 2>/dev/null || true
+    chmod 755 "${backup_dir}" 2>/dev/null || true
+
+    # Backup existing sudoers file if it exists
+    if [ -f "${sudoers_file}" ]; then
+        local today
+        today=$(date +%Y%m%d)
+
+        # Find next backup number for today
+        local count=1
+        while [ -f "${backup_dir}/nginx-adm.${today}-${count}.bak" ]; do
+            count=$((count + 1))
+        done
+
+        local backup_file="${backup_dir}/nginx-adm.${today}-${count}.bak"
+
+        cp -a "${sudoers_file}" "${backup_file}" 2>/dev/null || true
+        info "Backed up existing sudoers file → ${backup_file}"
+    fi
+
+    # Write the new restricted sudoers file
     cat > "${sudoers_file}" << 'EOF'
 # nginx-adm restricted sudoers - certbot-nginx 1.9.0
 # Allows nginx-adm to control nginx service without password (least privilege)
@@ -3225,13 +3248,14 @@ EOF
     chmod 0440 "${sudoers_file}" 2>/dev/null || true
     chown root:root "${sudoers_file}" 2>/dev/null || true
 
-    # Validate sudoers syntax (defensive)
+    # Defensive syntax validation
     if command -v visudo >/dev/null 2>&1; then
-        visudo -cf "${sudoers_file}" >/dev/null 2>&1 || \
-            warn "Warning: sudoers file may have syntax issues"
+        if ! visudo -cf "${sudoers_file}" >/dev/null 2>&1; then
+            warn "Warning: sudoers file syntax check failed. Please review ${sudoers_file}"
+        fi
     fi
 
-    info "Restricted sudoers for nginx-adm configured."
+    success "Restricted sudoers for nginx-adm configured successfully."
 }
 
 # =============================================================================
