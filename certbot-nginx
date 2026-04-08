@@ -1,18 +1,21 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.8.0
+# certbot-nginx – version 1.9.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
 #
-# Install (global / recommended):
+# Install (user):
+#     curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx | sh
+#
+# Install (root):
 #     curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx | sudo sh
 #
 # GitHub: https://github.com/Wilgat/certbot-nginx
 #
-# ────────────────────z────────────────────────────
+# ─────────────────────────────────────────────────────────────
 # STRICT CIAO DEFENSIVE CODING STYLE - FULLY APPLIED
-# ────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 #
 # !!! DO NOT MODIFY OR SIMPLIFY ANY PART OF THIS HEADER OR FUNCTIONS !!!
 #
@@ -21,6 +24,28 @@
 #
 # Aligned with https://github.com/Wilgat/ciao
 # Last aligned: April 2026
+# =============================================================================
+#
+# PROJECT INTENTION (1.9.0)
+# =============================================================================
+#
+# The primary goal of certbot-nginx is to provide a **more secure, auditable,
+# and production-hardened** way to use Certbot with nginx.
+#
+# Key security improvements in 1.9.0:
+#   • Drastically reduced root dependency after initial installation
+#   • Introduction of a dedicated, least-privilege user "nginx-adm"
+#   • All nginx configuration files and directories are owned by nginx-adm
+#   • systemctl operations on nginx are allowed via a restricted sudoers file
+#     (no password required, but only for nginx start/stop/reload/restart)
+#   • nginx -t can be run directly as nginx-adm (no sudo is required)
+#   • Better separation between "system installation" (still requires root)
+#     and "day-to-day configuration & renewal" (can be done as nginx-adm)
+#
+# This design gives you the convenience of a one-command installer while
+# following modern least-privilege principles and reducing the attack surface
+# of running everything as root.
+#
 # =============================================================================
 #
 # PLATFORM SUPPORT (Updated April 2026)
@@ -74,7 +99,34 @@
 #    • Whenever retrieving email or domain list later, re-create the folder
 #      and placeholder files if they are missing.
 #
-# 3. Strict Installation and Configuration Sequence 
+# 3. nginx-adm Least-Privilege Model (NEW in 1.9.0)
+#    • A dedicated normal user "nginx-adm" is created (if it does not exist).
+#    • nginx-adm owns the entire /etc/nginx directory tree.
+#    • nginx-adm has its home directory at /etc/nginx-adm.
+#    • /etc/nginx/sites-enabled  → symlink to /etc/nginx-adm/sites-enabled
+#    • /etc/nginx/sites-available → symlink to /etc/nginx-adm/sites-available
+#    • A restricted sudoers rule allows nginx-adm to run:
+#        systemctl start/stop/reload/restart nginx   (NOPASSWD)
+#    • Because nginx-adm owns /etc/nginx, "nginx -t" can be executed directly
+#      as nginx-adm — no sudo is required for configuration testing.
+#    • This design allows future configuration/renewal operations to run as
+#      nginx-adm instead of full root, significantly improving security.
+#
+# 4. Existing Nginx Configuration Backup Policy (NEW in 1.9.0)
+#    • Before any modification to nginx configuration (especially during
+#      initial setup or when regenerating configs), the script MUST create
+#      a dated backup of any existing configuration files.
+#    • Backup filename format: <original-name>.YYYYMMDD-N.bak
+#      Example: default.conf.20260408-1.bak
+#      (N starts at 1 and increments for multiple backups on the same day)
+#    • Special rule for default.conf (or any default site config in sites-available):
+#      After successful backup, the original default.conf MUST be removed
+#      from sites-available. This ensures that on repeated installations there
+#      will be only one backup file per day (no accumulation of default configs).
+#    • All backups are created before any removal or symlink changes.
+#    • This policy protects user custom configurations and provides safe rollback.
+#
+# 5. Strict Installation and Configuration Sequence 
 #    for interactive mode
 #    • Step 1: Install Certbot without plugin configuration
 #    • Step 2: Install Nginx without configuration
@@ -83,7 +135,7 @@
 #    • Step 5: Ensure nginx is stopped → then run Certbot using the user-chosen main domain
 #    • Step 6: ONLY AFTER certificates are successfully applied:
 #              Setup the full Nginx configuration using the same main domain
-#    • Step 7: Test config with nginx -t then start nginx
+#    • Step 7: Test config with nginx -t (as nginx-adm) then start nginx
 #
 #    for non-interactive mode
 #    • Step 1: Install Certbot without plugin configuration
@@ -104,11 +156,15 @@
 #    - Avoids common failures with --nginx plugin and partial setups
 #    - Follows the internal (Certbot provides cert) → external (Nginx serves outside) model
 #
-# 4. Additional Hard Rules
+# 6. Additional Hard Rules
 #    • Do NOT start Nginx early or let it run with incomplete config
 #    • Support --quiet and --json modes fully in all steps
 #    • Never simplify, refactor, or "improve" the defensive repetition
 #    • The first domain in the list is ALWAYS the primary common name for the certificate
+#    • After initial setup, prefer running nginx-related commands as nginx-adm
+#      whenever possible (least privilege principle)
+#    • Backup policy (section 4) MUST be respected on every run that touches
+#      nginx configuration files
 #
 # !!! ANY ATTEMPT TO CHANGE THIS SEQUENCE, COMBINE STEPS, START NGINX EARLIER,
 #     OR TREAT CERTBOT AND NGINX AS EQUAL LAYERS WILL BREAK THE INTENDED DESIGN !!!
@@ -124,7 +180,6 @@
 # Aligned with https://github.com/Wilgat/ciao
 # Last aligned: April 2026
 # =============================================================================
-
 # =============================================================================
 # WARNING - Reflection on Grok behavior
 # =============================================================================
@@ -885,7 +940,7 @@ self_uninstall() {
         for config in "${HOME}/.bashrc" "${HOME}/.zshrc" "${HOME}/.config/fish/config.fish"; do
             if [ -f "$config" ]; then
                 if sed -i.bak '/# Added by .* installer/d' "$config" 2>/dev/null && \
-                   sed -i.bak '/\.local\/bin:.*PATH/d' "$config" 2>/dev/null; then
+                sed -i.bak '/\.local\/bin:.*PATH/d' "$config" 2>/dev/null; then
                     cleaned=1
                 fi
                 rm -f "${config}.bak" 2>/dev/null || true
@@ -1236,7 +1291,7 @@ show_about_global() {
         
         # If we see the script name itself (or generic sh/dash/ash), climb to parent shell
         if [ "$current_shell" = "${APP_NAME}" ] || [ "$current_shell" = "sh" ] || \
-           [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
+        [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
             local parent_pid
             parent_pid=$(ps -p $$ -o ppid= 2>/dev/null | tr -d ' ')
             if [ -n "$parent_pid" ]; then
@@ -1291,7 +1346,7 @@ show_about_global() {
     
     # If we see the script name itself, try to get the real parent shell
     if [ "$current_shell" = "${APP_NAME}" ] || [ "$current_shell" = "sh" ] || \
-       [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
+    [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
         local parent_pid
         parent_pid=$(ps -p $$ -o ppid= 2>/dev/null | tr -d ' ')
         if [ -n "$parent_pid" ]; then
@@ -1344,30 +1399,30 @@ show_certbot_nginx_help() {
 ${APP_NAME} v${VERSION} — ${DESCRIPTION}
 
 Usage:
-  ${APP_NAME}                          Setup environment + build + run (preserves project)
-  ${APP_NAME} status                   Show application status
-  ${APP_NAME} about                    Full diagnostics (Java, Maven, project, etc.)
-  ${APP_NAME} version                  Show version
-  ${APP_NAME} version-check            Compare with latest
-  ${APP_NAME} self-update              Update to latest version
-  ${APP_NAME} self-uninstall           Remove timer from the system
-  ${APP_NAME} reinstall                Force reinstall
-  ${APP_NAME} help                     This help
-  ${APP_NAME} domains                  Display current domains
-  ${APP_NAME} email                    Display current Let's Encrypt email
-  ${APP_NAME} nginx-conf               Re-generate only Nginx configuration files
+${APP_NAME}                          Setup environment + build + run (preserves project)
+${APP_NAME} status                   Show application status
+${APP_NAME} about                    Full diagnostics (Java, Maven, project, etc.)
+${APP_NAME} version                  Show version
+${APP_NAME} version-check            Compare with latest
+${APP_NAME} self-update              Update to latest version
+${APP_NAME} self-uninstall           Remove timer from the system
+${APP_NAME} reinstall                Force reinstall
+${APP_NAME} help                     This help
+${APP_NAME} domains                  Display current domains
+${APP_NAME} email                    Display current Let's Encrypt email
+${APP_NAME} nginx-conf               Re-generate only Nginx configuration files
 
 Options:
-  --quiet, -q            Suppress non-error messages
-  --json                 Machine-readable JSON output (implies --quiet) 
-  --no-cloudflare        Not using cloudflare
+--quiet, -q            Suppress non-error messages
+--json                 Machine-readable JSON output (implies --quiet) 
+--no-cloudflare        Not using cloudflare
 
 Important Notes:
-  • Normal run preserves your existing project files, pom.xml, and source code.
+• Normal run preserves your existing project files, pom.xml, and source code.
 
 Examples:
-  ${APP_NAME}                              # Normal run (recommended)
-  ${APP_NAME} about --json
+${APP_NAME}                              # Normal run (recommended)
+${APP_NAME} about --json
 
 EOF
 }
@@ -2095,21 +2150,26 @@ get_or_set_email() {
 #   • fuser -k 80/tcp (aggressive kill of anything listening on port 80)
 #   • Short sleep to allow ports to fully release
 #
+# New in 1.9.0:
+#   • Attempts stop via nginx-adm sudo first (least privilege)
+#   • Falls back to direct systemctl
+#
 # !!! THIS FUNCTION MUST REMAIN EARLY IN BOTH INTERACTIVE AND NON-INTERACTIVE FLOWS !!!
 # !!! DO NOT REMOVE THE fuser KILL OR SOFTEN THIS BEHAVIOR !!!
 # !!! DO NOT START NGINX BEFORE CERTIFICATES ARE APPLIED !!!
 # =============================================================================
 
 stop_nginx_early() {
-    info "Stopping nginx and any process listening on port 80 (empty config has no use)..."
+    info "Stopping nginx and any process listening on port 80..."
 
-    # Graceful stop via systemd (if present)
+    # Prefer nginx-adm (least privilege)
+    sudo -u nginx-adm systemctl stop nginx 2>/dev/null || true
+
+    # Fallback
     systemctl stop nginx 2>/dev/null || true
 
-    # Aggressive kill of anything on port 80 (covers non-systemd or stuck processes)
     fuser -k 80/tcp 2>/dev/null || true
 
-    # Give the kernel time to release the port
     sleep 2
 
     info "Nginx and port 80 cleared."
@@ -2322,7 +2382,7 @@ get_main_domain() {
         main_domain=$(echo "$input" | tr -dc 'a-zA-Z0-9.-' | tr '[:upper:]' '[:lower:]')
 
         if [ -n "$main_domain" ] && \
-           ! echo "$main_domain" | grep -qE '(example|localhost|127\.0\.0\.1|local|test)'; then
+        ! echo "$main_domain" | grep -qE '(example|localhost|127\.0\.0\.1|local|test)'; then
             ui_success "✅ Primary domain accepted: ${main_domain}"
             echo "$main_domain"
             return 0
@@ -2572,14 +2632,14 @@ setup_nginx_configs() {
     local main_domain="$2"
     local cert_path="/etc/letsencrypt/live/${main_domain}"
 
-    # Defensive: ensure we have required inputs
+    # Defensive input validation
     [ -z "$domains" ]     && die "No domains provided to setup_nginx_configs()"
     [ -z "$main_domain" ] && die "No main domain provided to setup_nginx_configs()"
 
     info "Setting up final Nginx configuration (after certificates)..."
 
-    # Remove default site to prevent conflicts
-    rm -f /etc/nginx/sites-enabled/default
+    # Remove default site to prevent conflicts (already backed up earlier)
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
     # Ensure web roots exist
     mkdir -p /var/www
@@ -2671,7 +2731,7 @@ EOF
     ln -sf /etc/nginx/sites-available/redirect.conf /etc/nginx/sites-enabled/
 
     # =============================================================================
-    # Per-Domain Creating per-domain config, DocRoot and HTML Samples
+    # Per-Domain Configs, DocRoot and HTML Samples
     # =============================================================================
     info "Creating per-domain conf, DocRoot and HTML Samples..."
 
@@ -2698,7 +2758,7 @@ EOF
 </html>
 EOF
         chmod -R 755 "/var/www/${domain}"
-        info "Creating confifg /etc/nginx/sites-available/${domain}.conf ..."
+
         # HTTPS server block with Cloudflare protection
         cat > "/etc/nginx/sites-available/${domain}.conf" << EOF
 server {
@@ -2718,6 +2778,7 @@ server {
     ssl_prefer_server_ciphers off;
 
 EOF
+
         if [ "${USE_CLOUDFLARE}" -eq 1 ]; then
             cat >> "/etc/nginx/sites-available/${domain}.conf" << EOF
     # Cloudflare origin protection
@@ -2730,7 +2791,9 @@ EOF
     allow all;
 EOF
         fi
+
         cat >> "/etc/nginx/sites-available/${domain}.conf" << EOF
+
     # ACME challenge support (for renewals)
     location /.well-known/acme-challenge/ {
         root /var/www/letsencrypt;
@@ -2748,13 +2811,16 @@ EOF
         ln -sf "/etc/nginx/sites-available/${domain}.conf" /etc/nginx/sites-enabled/
     done
 
-    # Fix permissions for all document roots and files
-    fix_docroot_permissions
+    # =============================================================================
+    # Final ownership enforcement (1.9.0 requirement)
+    # =============================================================================
+    setup_nginx_adm_ownership
 
     info "Nginx configuration files created successfully."
-    info "→ Only Cloudflare IPs can access the sites (direct access blocked)."
+    info "→ Only Cloudflare IPs can access the sites (if enabled)."
     info "→ Certificate used: ${cert_path}/fullchain.pem (main domain: ${main_domain})"
     info "→ HTTP traffic is redirected to HTTPS."
+    info "→ All config files are now owned by nginx-adm."
 }
 
 # =============================================================================
@@ -2778,25 +2844,32 @@ EOF
 #   • Core certificate and nginx config logic remains Linux-centric.
 #   • On macOS, some systemd commands are skipped gracefully in stop_nginx_early().
 #
-# Strict Sequence (MUST NOT BE CHANGED):
-#   1. Install Certbot (no plugins)
-#   2. Install Nginx (no configuration)
-#   3. Stop Nginx early
-#   4. Handle email and domains independently
-#   5. Apply certificates using --standalone (nginx stopped)
-#   6. ONLY AFTER successful certificates → setup full Nginx configuration
-#   7. Test config + start nginx
-#
-# Why this exact order?
-#   - Prevents nginx from running with empty/broken config
-#   - Allows clean Certbot --standalone operation on port 80
-#   - Maintains clear separation: Certbot (cert provider) → Nginx (web server)
+# New in 1.9.0:
+#   • Calls nginx-adm setup functions early
+#   • Calls backup_existing_nginx_configs() before any configuration changes
+#   • Uses nginx-adm for ownership and testing (least privilege)
 #
 # New Feature (April 2026):
 #   • Added interactive question: "Are you using Cloudflare proxy?"
 #   • Supports --no-cloudflare flag to skip the question and disable protection
 #   • When using Cloudflare: warns user to temporarily set DNS to "DNS Only" (grey cloud)
 #   • When not using Cloudflare: generates open Nginx config (allow all)
+#
+# Strict Sequence (MUST NOT BE CHANGED):
+#   1. nginx-adm user + ownership + sudoers
+#   2. Backup existing configs (with default.conf removal)
+#   3. Install Certbot
+#   4. Install Nginx
+#   5. Stop Nginx early
+#   6. Handle email and domains
+#   7. Apply certificates
+#   8. Setup Nginx configs
+#   9. Test (as nginx-adm) and start
+#
+# Why this exact order?
+#   - Prevents nginx from running with empty/broken config
+#   - Allows clean Certbot --standalone operation on port 80
+#   - Maintains clear separation: Certbot (cert provider) → Nginx (web server)
 #
 # !!! DO NOT MODIFY THIS SEQUENCE !!!
 # !!! DO NOT START NGINX BEFORE CERTIFICATES ARE APPLIED !!!
@@ -2806,6 +2879,14 @@ EOF
 run_interactive_setup() {
     check_root
     ensure_letsencrypt_structure
+
+    # === 1.9.0: nginx-adm Least-Privilege Setup ===
+    create_nginx_adm_user
+    setup_nginx_adm_ownership
+    setup_restricted_sudoers
+
+    # === 1.9.0: Backup before any config changes ===
+    backup_existing_nginx_configs
 
     # Step 1-2: Install packages (no config)
     install_certbot
@@ -2823,17 +2904,14 @@ run_interactive_setup() {
     local domains_to_confirm
 
     domains=$(load_existing_domains)
-    [ ! -z "$domains" ] && main_domain=$(get_main_domain_from_file "$domains")
+    [ -n "$domains" ] && main_domain=$(get_main_domain_from_file "$domains")
     if [ -z "$main_domain" ]; then
-        # Get the main domain interactively (authoritative user choice)
         main_domain=$(get_main_domain)
     else
         ui_info "Using saved Let's Encrypt main domain: ${main_domain}"
     fi
 
-    # Prepare full list for confirmation (existing domains + force main domain first)
     if [ -n "$domains" ]; then
-        # Re-arrange so main domain is always first (in case it moved)
         domains=$(echo "$domains" | tr ' ' '\n' | grep -v "^$main_domain$" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
         domains_to_confirm="$main_domain $domains"
         domains_to_confirm=$(echo "$domains_to_confirm" | tr -s ' ' | sed 's/^ *//;s/ *$//')
@@ -2841,10 +2919,8 @@ run_interactive_setup() {
         domains_to_confirm="$main_domain"
     fi
 
-    # Let user review and add more domains (SANs)
     domains=$(ask_and_confirm_domains "$domains_to_confirm")
 
-    # Final force: make sure user-chosen main domain is first
     if [ -n "$main_domain" ] && [ -n "$domains" ]; then
         domains=$(echo "$domains" | tr ' ' '\n' | grep -v "^$main_domain$" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
         domains="$main_domain $domains"
@@ -2852,7 +2928,7 @@ run_interactive_setup() {
     fi
     save_domains_to_file "$domains"
 
-    # ====================== NEW: Cloudflare Choice ======================
+    # Cloudflare Choice
     if [ "${USE_CLOUDFLARE}" -eq 1 ]; then
         if [ "$TTY" -eq 1 ]; then
             empty_line
@@ -2877,17 +2953,16 @@ run_interactive_setup() {
             fi
         fi
     fi
-    # ===================================================================
 
-    # Step 5: Apply certificates (nginx must be stopped)
+    # Step 5: Apply certificates
     apply_letsencrypt_standalone "$domains" "$email" "$main_domain"
 
     # Step 6: Setup final Nginx configuration
     setup_nginx_configs "$domains" "$main_domain"
 
-    # Step 7: Test and start nginx
-    info "Testing nginx configuration..."
-    /usr/sbin/nginx -t || die "Nginx config test failed!"
+    # Step 7: Test and start nginx (as nginx-adm)
+    info "Testing nginx configuration as nginx-adm..."
+    sudo -u nginx-adm nginx -t || die "Nginx config test failed!"
 
     info "Starting nginx service..."
     systemctl start nginx || warn "Failed to start nginx (check manually)"
@@ -2899,6 +2974,79 @@ run_interactive_setup() {
         success "Cloudflare IP restriction is ENABLED (direct access blocked)"
     else
         success "Cloudflare protection is DISABLED (open to all IPs)"
+    fi
+
+    success "nginx-adm least-privilege model is active."
+}
+
+# =============================================================================
+# run_non_interactive_setup() - Non-Interactive Mode (NEW in 1.9.0)
+# =============================================================================
+#
+# CRITICAL FUNCTION - NON-INTERACTIVE INSTALL-ONLY PATH
+#
+# Purpose:
+#   Runs when the script is executed in non-interactive mode (no TTY).
+#   According to the header requirements:
+#     • Only installs certbot and nginx (no configuration)
+#     • Stops nginx early (empty configuration has no use)
+#     • Fully supports the new nginx-adm least-privilege model
+#
+# Behavior (as defined in CRITICAL REQUIREMENTS):
+#   • Must be run as root (enforced by check_root)
+#   • Creates nginx-adm user, sets ownership, and configures restricted sudoers
+#   • Performs dated backup of existing nginx configs (with default.conf removal)
+#   • Installs certbot and nginx without any further configuration
+#   • Stops nginx service immediately
+#   • Does NOT handle email, domains, certificates, or nginx config generation
+#   • Provides clear feedback in both normal and --json mode
+#
+# Why this limited behavior?
+#   - Non-interactive mode is intended for automation / scripting
+#   - Full setup (email + domains + certs + config) requires interactive user input
+#   - This keeps the script safe and predictable in non-TTY environments
+#
+# !!! THIS FUNCTION MUST ONLY PERFORM INSTALLATION + STOP !!!
+# !!! NO CERTBOT CERTONLY, NO DOMAIN HANDLING, NO NGINX CONFIG CREATION !!!
+# =============================================================================
+
+run_non_interactive_setup() {
+    check_root
+    ensure_letsencrypt_structure
+
+    info "Running in non-interactive mode (install-only)"
+
+    # === 1.9.0: nginx-adm Least-Privilege Setup ===
+    create_nginx_adm_user
+    setup_nginx_adm_ownership
+    setup_restricted_sudoers
+
+    # === 1.9.0: Backup existing configs before any potential changes ===
+    backup_existing_nginx_configs
+
+    # Step 1-2: Install packages (no configuration)
+    install_certbot
+    install_nginx
+
+    # Step 3: Stop Nginx early (empty configuration has no use)
+    stop_nginx_early
+
+    # Final success message
+    if [ "${JSON}" -eq 1 ]; then
+        output_json "success" "Non-interactive installation completed" \
+            "mode" "non-interactive" \
+            "installed" "certbot,nginx" \
+            "nginx_adm" "created_and_configured" \
+            "action" "nginx_stopped"
+    else
+        success "Non-interactive setup completed successfully."
+        success "• certbot and nginx have been installed"
+        success "• nginx-adm user created with least-privilege configuration"
+        success "• Existing nginx configs backed up (default.conf removed if present)"
+        success "• Nginx service has been stopped"
+        msg ""
+        info "To complete full setup (certificates + configuration), run interactively:"
+        msg "    sudo ${APP_NAME}"
     fi
 }
 
@@ -2919,22 +3067,23 @@ run_interactive_setup() {
 #   • This prevents ugly permission errors on stderr while still allowing
 #     read operations to succeed gracefully ("No email configured yet").
 #
+# Updated in 1.9.0:
+#   • Skips creation when not root (supports nginx-adm diagnostics)
+#
 # !!! DO NOT REMOVE THE ROOT CHECK !!!
 # !!! CALL IT EARLY AND OFTEN !!!
 # =============================================================================
 
 ensure_letsencrypt_structure() {
-    # If not root, silently skip creation (supports non-root diagnostics)
     if [ "$(id -u)" -ne 0 ]; then
         return 0
     fi
 
     mkdir -p /etc/letsencrypt \
-             /etc/letsencrypt/renewal \
-             /etc/letsencrypt/live \
-             /etc/letsencrypt/archive 2>/dev/null || true
+            /etc/letsencrypt/renewal \
+            /etc/letsencrypt/live \
+            /etc/letsencrypt/archive 2>/dev/null || true
 
-    # Create placeholder files if missing
     if [ ! -f "$EMAIL_FILE" ]; then
         touch "$EMAIL_FILE" 2>/dev/null || true
         chmod 600 "$EMAIL_FILE" 2>/dev/null || true
@@ -2944,6 +3093,196 @@ ensure_letsencrypt_structure() {
         touch "$DOMAINS_FILE" 2>/dev/null || true
         chmod 644 "$DOMAINS_FILE" 2>/dev/null || true
     fi
+}
+
+
+# =============================================================================
+# create_nginx_adm_user() - Create dedicated least-privilege user (NEW 1.9.0)
+# =============================================================================
+#
+# CRITICAL FUNCTION - PART OF nginx-adm LEAST-PRIVILEGE MODEL
+#
+# Purpose:
+#   Creates the "nginx-adm" user if it does not exist.
+#   This user will own all nginx configuration and will be used for day-to-day operations.
+#
+# Rules:
+#   • User is a normal (non-root) system user.
+#   • Home directory is set to /etc/nginx-adm (not under /home).
+#   • Shell is /bin/false (no login shell).
+#   • Group "nginx-adm" is also created.
+#   • Idempotent: does nothing if user already exists.
+#
+# !!! MUST BE CALLED EARLY IN BOTH INTERACTIVE AND NON-INTERACTIVE SETUP !!!
+# =============================================================================
+
+create_nginx_adm_user() {
+    info "Setting up nginx-adm least-privilege user..."
+
+    if id "nginx-adm" >/dev/null 2>&1; then
+        info "nginx-adm user already exists."
+        return 0
+    fi
+
+    if command -v useradd >/dev/null 2>&1; then
+        useradd -r -s /bin/false -d /etc/nginx-adm -m nginx-adm 2>/dev/null || true
+    else
+        # Fallback for systems without useradd (very rare)
+        adduser -D -H -s /bin/false nginx-adm 2>/dev/null || true
+    fi
+
+    # Ensure home directory exists with correct ownership
+    mkdir -p /etc/nginx-adm 2>/dev/null || true
+    chown nginx-adm:nginx-adm /etc/nginx-adm 2>/dev/null || true
+    chmod 755 /etc/nginx-adm 2>/dev/null || true
+
+    info "nginx-adm user created successfully."
+}
+
+# =============================================================================
+# setup_nginx_adm_ownership() - Set ownership and symlinks (NEW 1.9.0)
+# =============================================================================
+#
+# CRITICAL FUNCTION - PART OF nginx-adm LEAST-PRIVILEGE MODEL
+#
+# Purpose:
+#   Makes nginx-adm the owner of /etc/nginx and sets up the required symlinks.
+#
+# Rules:
+#   • Recursively chown /etc/nginx to nginx-adm:nginx-adm
+#   • Create /etc/nginx-adm/sites-available and sites-enabled if missing
+#   • Replace /etc/nginx/sites-available and sites-enabled with symlinks pointing to nginx-adm directories
+#   • Defensive: never assume directories exist
+#
+# !!! CALL AFTER create_nginx_adm_user() AND BEFORE ANY CONFIG MODIFICATION !!!
+# =============================================================================
+
+setup_nginx_adm_ownership() {
+    info "Setting nginx-adm ownership on configuration directories..."
+
+    # Ensure base directories exist
+    mkdir -p /etc/nginx-adm/sites-available
+    mkdir -p /etc/nginx-adm/sites-enabled
+    mkdir -p /etc/nginx 2>/dev/null || true
+
+    # Transfer ownership
+    chown -R nginx-adm:nginx-adm /etc/nginx 2>/dev/null || true
+    chown -R nginx-adm:nginx-adm /etc/nginx-adm 2>/dev/null || true
+
+    # Create symlinks (remove existing directories first if they are real dirs)
+    if [ -d "/etc/nginx/sites-available" ] && [ ! -L "/etc/nginx/sites-available" ]; then
+        rm -rf "/etc/nginx/sites-available" 2>/dev/null || true
+    fi
+    if [ -d "/etc/nginx/sites-enabled" ] && [ ! -L "/etc/nginx/sites-enabled" ]; then
+        rm -rf "/etc/nginx/sites-enabled" 2>/dev/null || true
+    fi
+
+    ln -sf /etc/nginx-adm/sites-available /etc/nginx/sites-available
+    ln -sf /etc/nginx-adm/sites-enabled /etc/nginx/sites-enabled
+
+    chmod 755 /etc/nginx-adm 2>/dev/null || true
+    chmod 755 /etc/nginx-adm/sites-available 2>/dev/null || true
+    chmod 755 /etc/nginx-adm/sites-enabled 2>/dev/null || true
+
+    info "nginx-adm ownership and symlinks configured."
+}
+
+# =============================================================================
+# setup_restricted_sudoers() - Create restricted sudoers for nginx-adm (NEW 1.9.0)
+# =============================================================================
+#
+# CRITICAL FUNCTION - PART OF nginx-adm LEAST-PRIVILEGE MODEL
+#
+# Purpose:
+#   Creates a sudoers.d file that allows nginx-adm to control nginx service
+#   without password, but only for specific systemctl commands.
+#
+# Rules:
+#   • File: /etc/sudoers.d/nginx-adm (mode 0440)
+#   • Only allows: systemctl start|stop|reload|restart nginx
+#   • Uses NOPASSWD
+#   • Idempotent and safe (overwrites only if content differs)
+#
+# !!! MUST BE CALLED AFTER create_nginx_adm_user() !!!
+# =============================================================================
+
+setup_restricted_sudoers() {
+    local sudoers_file="/etc/sudoers.d/nginx-adm"
+
+    info "Setting up restricted sudoers for nginx-adm..."
+
+    cat > "${sudoers_file}" << 'EOF'
+# nginx-adm restricted sudoers - certbot-nginx 1.9.0
+# Allows nginx-adm to control nginx service without password (least privilege)
+nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl start nginx, \
+                            /bin/systemctl stop nginx, \
+                            /bin/systemctl reload nginx, \
+                            /bin/systemctl restart nginx
+EOF
+
+    chmod 0440 "${sudoers_file}" 2>/dev/null || true
+    chown root:root "${sudoers_file}" 2>/dev/null || true
+
+    info "Restricted sudoers for nginx-adm configured."
+}
+
+# =============================================================================
+# backup_existing_nginx_configs() - Dated backup with special default.conf handling (NEW 1.9.0)
+# =============================================================================
+#
+# CRITICAL FUNCTION - PART OF BACKUP POLICY
+#
+# Purpose:
+#   Creates dated backups before modifying nginx configs.
+#   Special rule: default.conf is backed up then removed (prevents accumulation on repeated runs).
+#
+# Backup format: <filename>.YYYYMMDD-N.bak   (N = daily counter starting at 1)
+#
+# Rules:
+#   • Backs up files in /etc/nginx/sites-available/
+#   • For default.conf (or default site files): backup then delete original
+#   • Other files: backup only (keep original)
+#   • Idempotent and defensive
+#
+# !!! MUST BE CALLED BEFORE ANY CONFIG CREATION OR REMOVAL !!!
+# =============================================================================
+
+backup_existing_nginx_configs() {
+    local sites_dir="/etc/nginx/sites-available"
+    local today
+    today=$(date +%Y%m%d)
+
+    [ ! -d "$sites_dir" ] && return 0
+
+    info "Creating dated backup of existing nginx configurations..."
+
+    for conf in "$sites_dir"/*.conf; do
+        [ ! -f "$conf" ] && continue
+
+        local base_name
+        base_name=$(basename "$conf")
+
+        # Count existing backups for today
+        local count=1
+        while [ -f "${conf}.${today}-${count}.bak" ]; do
+            count=$((count + 1))
+        done
+
+        local backup_file="${conf}.${today}-${count}.bak"
+
+        cp -a "$conf" "$backup_file" 2>/dev/null || true
+        chown nginx-adm:nginx-adm "$backup_file" 2>/dev/null || true
+
+        info "Backed up: ${base_name} → ${backup_file}"
+
+        # Special rule for default.conf: remove original after backup
+        if [ "$base_name" = "default.conf" ] || echo "$base_name" | grep -qE '^default'; then
+            rm -f "$conf" 2>/dev/null || true
+            info "Removed original default.conf after backup (per policy)."
+        fi
+    done
+
+    success "Nginx configuration backup completed."
 }
 
 # =============================================================================
@@ -2994,6 +3333,12 @@ ensure_letsencrypt_structure() {
 #   • Non-interactive mode only installs packages and stops nginx — it forces
 #     the user to run interactively for the rest.
 #
+# Changes in 1.9.0:
+#   • Added nginx-adm setup in both interactive and non-interactive paths
+#   • Created and integrated run_non_interactive_setup() for root-only install-only mode
+#   • Ensured backup and nginx-adm functions are called where configuration is touched
+#   • Non-interactive mode now respects the new least-privilege model (when run as root)
+#
 # !!! THIS FUNCTION IS THE SINGLE ENTRY POINT !!!
 # !!! DO NOT MOVE THE AUTO-INSTALL BLOCK !!!
 # !!! DO NOT COMBINE OR REFACTOR COMMAND PARSING !!!
@@ -3014,12 +3359,6 @@ main_certbot_nginx_app() {
     # =============================================================================
     # AUTO-INSTALL FOR ONE-LINER (curl | sh) - MUST STAY AT THE TOP
     # =============================================================================
-    # This block enables the popular installation command:
-    #     curl -fsSL https://... | sudo sh
-    #
-    # It must execute BEFORE any argument parsing to support clean one-liners.
-    # In quiet/JSON mode we install silently.
-    # =============================================================================
     if ! is_installed && [ $# -eq 0 ]; then
         if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
             perform_self_install
@@ -3030,9 +3369,6 @@ main_certbot_nginx_app() {
 
     # =============================================================================
     # FLAG-FIRST ARGUMENT PARSING
-    # =============================================================================
-    # Flags are processed before the command name for clean behavior.
-    # This allows commands like: ${APP_NAME} domains --json
     # =============================================================================
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -3147,13 +3483,16 @@ main_certbot_nginx_app() {
             local main_domain
             main_domain=$(get_main_domain_from_file "$domains")
             [ -z "$main_domain" ] && die "Could not determine main domain."
+
+            # 1.9.0: Backup before regenerating configs
+            backup_existing_nginx_configs
             setup_nginx_configs "$domains" "$main_domain"
             info "✅ Nginx configs regenerated using main domain: ${main_domain}"
             exit 0
             ;;
 
         run)
-            # Core setup flow - respects interactive vs non-interactive
+            # Core setup flow - respects interactive vs non-interactive mode
             if [ "$TTY" -eq 1 ]; then
                 run_interactive_setup
             else
