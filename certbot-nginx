@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.11.0
+# certbot-nginx – version 1.12.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -228,7 +228,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.10.0"
+VERSION="1.12.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
