@@ -3201,7 +3201,8 @@ setup_nginx_adm_ownership() {
 #   • File: /etc/sudoers.d/nginx-adm (mode 0440)
 #   • Only allows: systemctl start|stop|reload|restart nginx
 #   • Uses NOPASSWD
-#   • Idempotent and safe (overwrites only if content differs)
+#   • Must end with a blank line (sudoers requirement)
+#   • Idempotent: always overwrites with clean content
 #
 # !!! MUST BE CALLED AFTER create_nginx_adm_user() !!!
 # =============================================================================
@@ -3215,13 +3216,20 @@ setup_restricted_sudoers() {
 # nginx-adm restricted sudoers - certbot-nginx 1.9.0
 # Allows nginx-adm to control nginx service without password (least privilege)
 nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl start nginx, \
-                            /bin/systemctl stop nginx, \
-                            /bin/systemctl reload nginx, \
-                            /bin/systemctl restart nginx
+                             /bin/systemctl stop nginx, \
+                             /bin/systemctl reload nginx, \
+                             /bin/systemctl restart nginx
+
 EOF
 
     chmod 0440 "${sudoers_file}" 2>/dev/null || true
     chown root:root "${sudoers_file}" 2>/dev/null || true
+
+    # Validate sudoers syntax (defensive)
+    if command -v visudo >/dev/null 2>&1; then
+        visudo -cf "${sudoers_file}" >/dev/null 2>&1 || \
+            warn "Warning: sudoers file may have syntax issues"
+    fi
 
     info "Restricted sudoers for nginx-adm configured."
 }
