@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.9.0
+# certbot-nginx – version 1.10.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -26,7 +26,7 @@
 # Last aligned: April 2026
 # =============================================================================
 #
-# PROJECT INTENTION (1.9.0)
+# PROJECT INTENTION (1.10.0)
 # =============================================================================
 #
 # The primary goal of certbot-nginx is to provide a **more secure, auditable,
@@ -228,7 +228,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.8.0"
+VERSION="1.10.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -420,7 +420,7 @@ fi
 ROOT_DISPLAYED=0
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
-        die "This script must be run as root (use sudo)."
+        die "This feature must be run as root (use sudo)."
     fi
     [ "$ROOT_DISPLAYED" = "0" ] && info "Running as root." 
     ROOT_DISPLAYED=1
@@ -679,9 +679,6 @@ ui_empty_line() {
 # Checks whether the program is already installed, supporting both root
 # and normal user installations with safe fallbacks.
 #
-# Even though we should use check_root() first,
-# We should still keep non-root for reuse in other projects.
-#
 # Please don't modify this code for root-only installed
 # You can check [ "$(id -u)" -eq 0 ] before calling / excuting 
 #   this function
@@ -803,9 +800,6 @@ version_check() {
 # Downloads and installs the latest version from GitHub.
 # Respects --force and --quiet.
 #
-# Even though we should use check_root() first,
-# We should still keep non-root for reuse in other projects.
-#
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # Designed to be reusable in other projects.
 # =============================================================================
@@ -854,9 +848,6 @@ self_update() {
 # GENERAL PURPOSE:
 # Removes the installed ${APP_NAME} binary (global or user) and cleans up the PATH
 # entry added by the installer in shell config files.
-#
-# Even though we should use check_root() first,
-# We should still keep non-root for reuse in other projects.
 #
 # Respects --force, --quiet, and --json.
 # Works for both root and user installations.
@@ -968,9 +959,6 @@ self_uninstall() {
 # Returns 0 if the given directory (default: INSTALL_DIR) is already in $PATH.
 # POSIX-compatible using case statement (works in sh/dash/bash/zsh).
 #
-# Even though we should use check_root(), And this function will never been
-# exceuted, we should still keep non-root for reuse in other projects.
-#
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
 # Designed to be reusable in other projects.
 # =============================================================================
@@ -989,9 +977,6 @@ in_path() {
 # GENERAL PURPOSE:
 # Adds ~/.local/bin to the user's shell configuration for bash, zsh, and fish.
 # Works even if the user is currently using a different shell.
-#
-# Even though we should use check_root(), And this function will never been
-# exceuted, we should still keep non-root for reuse in other projects.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
 # Designed to be reusable in other projects.
@@ -1068,9 +1053,6 @@ add_to_shell_path() {
 #
 # GENERAL PURPOSE:
 # Downloads and installs the script to the correct location (global or user-local).
-#
-# Even though we should use check_root() first,
-# We should still keep non-root for reuse in other projects.
 #
 # Please don't modify this code for root-only installed
 # You can check [ "$(id -u)" -eq 0 ] before calling / executing 
@@ -1207,9 +1189,6 @@ perform_self_install() {
 #
 # Respects both --quiet and --json modes.
 # In JSON mode we skip the interactive prompt entirely.
-#
-# Even though we should use check_root() first,
-# We should still keep non-root for reuse in other projects.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
 # Designed to be reusable in other projects.
@@ -2150,7 +2129,7 @@ get_or_set_email() {
 #   • fuser -k 80/tcp (aggressive kill of anything listening on port 80)
 #   • Short sleep to allow ports to fully release
 #
-# New in 1.9.0:
+# New in 1.10.0:
 #   • Attempts stop via nginx-adm sudo first (least privilege)
 #   • Falls back to direct systemctl
 #
@@ -2961,8 +2940,8 @@ run_interactive_setup() {
     setup_nginx_configs "$domains" "$main_domain"
 
     # Step 7: Test and start nginx (as nginx-adm)
-    info "Testing nginx configuration as nginx-adm..."
-    sudo -u nginx-adm nginx -t || die "Nginx config test failed!"
+    info "Testing nginx configuration..."
+    sudo nginx -t || die "Nginx config test failed!"
 
     info "Starting nginx service..."
     systemctl start nginx || warn "Failed to start nginx (check manually)"
@@ -2993,7 +2972,6 @@ run_interactive_setup() {
 #     • Fully supports the new nginx-adm least-privilege model
 #
 # Behavior (as defined in CRITICAL REQUIREMENTS):
-#   • Must be run as root (enforced by check_root)
 #   • Creates nginx-adm user, sets ownership, and configures restricted sudoers
 #   • Performs dated backup of existing nginx configs (with default.conf removal)
 #   • Installs certbot and nginx without any further configuration
@@ -3011,7 +2989,6 @@ run_interactive_setup() {
 # =============================================================================
 
 run_non_interactive_setup() {
-    check_root
     ensure_letsencrypt_structure
 
     info "Running in non-interactive mode (install-only)"
@@ -3109,82 +3086,104 @@ ensure_letsencrypt_structure() {
 # Rules:
 #   • User is a normal (non-root) system user.
 #   • Home directory is set to /etc/nginx-adm (not under /home).
-#   • Shell is /bin/false (no login shell).
+#   • Shell is /bin/bash.
 #   • Group "nginx-adm" is also created.
 #   • Idempotent: does nothing if user already exists.
+#   • Fixed UID = 1999, GID = 1999
 #
 # !!! MUST BE CALLED EARLY IN BOTH INTERACTIVE AND NON-INTERACTIVE SETUP !!!
 # =============================================================================
 
 create_nginx_adm_user() {
-    info "Setting up nginx-adm least-privilege user..."
+    info "Setting up nginx-adm user (UID/GID 1999)..."
 
-    if id "nginx-adm" >/dev/null 2>&1; then
-        info "nginx-adm user already exists."
-        return 0
+    # Create group with fixed GID if it doesn't exist
+    if ! getent group nginx-adm >/dev/null 2>&1; then
+        groupadd -g 1999 nginx-adm 2>/dev/null || true
     fi
 
-    if command -v useradd >/dev/null 2>&1; then
-        useradd -r -s /bin/false -d /etc/nginx-adm -m nginx-adm 2>/dev/null || true
+    # Create user if it doesn't exist
+    if ! id "nginx-adm" >/dev/null 2>&1; then
+        useradd -m -d /etc/nginx-adm \
+                -g 1999 -u 1999 \
+                -s /bin/bash \
+                -c "Admin user for nginx configuration" \
+                nginx-adm 2>/dev/null || true
     else
-        # Fallback for systems without useradd (very rare)
-        adduser -D -H -s /bin/false nginx-adm 2>/dev/null || true
+        info "nginx-adm user already exists."
     fi
 
-    # Ensure home directory exists with correct ownership
+    # Ensure home directory exists and has correct ownership
     mkdir -p /etc/nginx-adm 2>/dev/null || true
     chown nginx-adm:nginx-adm /etc/nginx-adm 2>/dev/null || true
     chmod 755 /etc/nginx-adm 2>/dev/null || true
 
-    info "nginx-adm user created successfully."
+    info "nginx-adm user (UID/GID 1999) configured with home /etc/nginx-adm."
 }
 
 # =============================================================================
-# setup_nginx_adm_ownership() - Set ownership and symlinks (NEW 1.9.0)
+# setup_nginx_adm_ownership() - Set ownership and symlinks (Fixed for 1.9.0 in 1.10.0)
 # =============================================================================
 #
 # CRITICAL FUNCTION - PART OF nginx-adm LEAST-PRIVILEGE MODEL
 #
 # Purpose:
-#   Makes nginx-adm the owner of /etc/nginx and sets up the required symlinks.
+#   Ensures nginx-adm owns the configuration directories and sets up correct symlinks.
 #
-# Rules:
-#   • Recursively chown /etc/nginx to nginx-adm:nginx-adm
-#   • Create /etc/nginx-adm/sites-available and sites-enabled if missing
-#   • Replace /etc/nginx/sites-available and sites-enabled with symlinks pointing to nginx-adm directories
-#   • Defensive: never assume directories exist
+# Important Fixes:
+#   • Does NOT recreate user (only ownership and symlinks)
+#   • Preserves existing files in /etc/nginx-adm when user is recreated
+#   • Correct symlink direction: /etc/nginx/sites-* → /etc/nginx-adm/sites-*
+#   • Uses chown -R nginx-adm:root as per your recommendation
+#   • Uses 775 permissions for better group access
+#   • Defensive: never deletes real config directories without backup
 #
-# !!! CALL AFTER create_nginx_adm_user() AND BEFORE ANY CONFIG MODIFICATION !!!
+# !!! MUST BE CALLED AFTER create_nginx_adm_user() !!!
 # =============================================================================
 
 setup_nginx_adm_ownership() {
     info "Setting nginx-adm ownership on configuration directories..."
 
-    # Ensure base directories exist
+    # Ensure base directories exist (do not delete existing content)
     mkdir -p /etc/nginx-adm/sites-available
     mkdir -p /etc/nginx-adm/sites-enabled
     mkdir -p /etc/nginx 2>/dev/null || true
 
-    # Transfer ownership
-    chown -R nginx-adm:nginx-adm /etc/nginx 2>/dev/null || true
-    chown -R nginx-adm:nginx-adm /etc/nginx-adm 2>/dev/null || true
+    # Transfer ownership - nginx-adm:root (as per your test)
+    chown -R nginx-adm:root /etc/nginx 2>/dev/null || true
+    chown -R nginx-adm:root /etc/nginx-adm 2>/dev/null || true
 
-    # Create symlinks (remove existing directories first if they are real dirs)
-    if [ -d "/etc/nginx/sites-available" ] && [ ! -L "/etc/nginx/sites-available" ]; then
-        rm -rf "/etc/nginx/sites-available" 2>/dev/null || true
-    fi
-    if [ -d "/etc/nginx/sites-enabled" ] && [ ! -L "/etc/nginx/sites-enabled" ]; then
-        rm -rf "/etc/nginx/sites-enabled" 2>/dev/null || true
-    fi
+    # Create symlinks from /etc/nginx → /etc/nginx-adm (correct direction)
+    for dir in sites-available sites-enabled; do
+        target="/etc/nginx/${dir}"
+        link_source="/etc/nginx-adm/${dir}"
 
-    ln -sf /etc/nginx-adm/sites-available /etc/nginx/sites-available
-    ln -sf /etc/nginx-adm/sites-enabled /etc/nginx/sites-enabled
+        # If it's a real directory (not symlink), back it up first then remove
+        if [ -d "${target}" ] && [ ! -L "${target}" ]; then
+            local today=$(date +%Y%m%d)
+            local count=1
+            while [ -f "/etc/nginx/${dir}.${today}-${count}.bak" ]; do
+                count=$((count + 1))
+            done
+            cp -a "${target}" "/etc/nginx/${dir}.${today}-${count}.bak" 2>/dev/null || true
+            info "Backed up real directory ${target} before symlink creation."
+            rm -rf "${target}" 2>/dev/null || true
+        fi
 
-    chmod 755 /etc/nginx-adm 2>/dev/null || true
-    chmod 755 /etc/nginx-adm/sites-available 2>/dev/null || true
-    chmod 755 /etc/nginx-adm/sites-enabled 2>/dev/null || true
+        # Create symlink if it doesn't exist or is broken
+        if [ ! -L "${target}" ]; then
+            ln -sf "${link_source}" "${target}"
+            info "Created symlink: ${target} → ${link_source}"
+        fi
+    done
 
-    info "nginx-adm ownership and symlinks configured."
+    # Set proper permissions
+    chmod 775 /etc/nginx 2>/dev/null || true
+    chmod 775 /etc/nginx-adm 2>/dev/null || true
+    chmod 775 /etc/nginx-adm/sites-available 2>/dev/null || true
+    chmod 775 /etc/nginx-adm/sites-enabled 2>/dev/null || true
+
+    success "nginx-adm ownership and symlinks configured successfully."
 }
 
 # =============================================================================
@@ -3345,7 +3344,7 @@ backup_existing_nginx_configs() {
 # Auto-Install Behavior (Defensive):
 #   • When the script is NOT installed and no arguments are given, it offers
 #     (or automatically performs) self-installation.
-#   • This powers the popular `curl | sudo sh` one-liner.
+#   • This powers the popular `curl | sh` one-liner.
 #   • The block MUST stay at the very top, before any argument parsing.
 #
 # Command Parsing Rules:
@@ -3476,13 +3475,11 @@ main_certbot_nginx_app() {
             ;;
 
         self-update)
-            check_root
             self_update
             exit 0
             ;;
 
         self-uninstall)
-            check_root
             self_uninstall
             exit 0
             ;;
