@@ -1,6 +1,6 @@
 # certbot-nginx
 
-[![Version](https://img.shields.io/badge/Version-1.12.0-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
+[![Version](https://img.shields.io/badge/Version-1.13.0-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Wilgat/certbot-nginx?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 

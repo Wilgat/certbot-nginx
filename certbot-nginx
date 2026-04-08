@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.12.0
+# certbot-nginx – version 1.13.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -228,7 +228,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.12.0"
+VERSION="1.13.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -388,7 +388,6 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 # ----------------------------- File Paths -------------------------------------
 DOMAINS_FILE="/etc/letsencrypt/domains.conf"
 EMAIL_FILE="/etc/letsencrypt/email.conf"
-CLOUDFLARE_IPS_FILE="/etc/nginx/cloudflare-ips.conf"
 
 # =============================================================================
 # Root Detection
@@ -2584,9 +2583,14 @@ fix_docroot_permissions() {
 #   • To update ranges in the future:
 #       curl -fsSL https://www.cloudflare.com/ips-v4 > /tmp/cf-ipv4
 #       curl -fsSL https://www.cloudflare.com/ips-v6 > /tmp/cf-ipv6
-#     Then manually merge into ${CLOUDFLARE_IPS_FILE} and re-run:
+#     Then manually merge into ${CLOUDFLARE_MAP_FILE} and re-run:
 #       ${APP_NAME} nginx-conf
 #   • Or implement a simple update script/hook later if needed.
+#   • If access to / return 403, please use /cloudflare-check to inspect
+#
+# Problems found:
+#   • nginx cannot check $remote_ip against ip map well, fall back to 
+#     weak $http_cf_connecting_ip header at this stage.
 #
 # Certificate Usage:
 #   All domains (main + SANs) share ONE certificate located at:
@@ -2602,136 +2606,87 @@ setup_nginx_configs() {
     local domains="$1"
     local main_domain="$2"
     local cert_path="/etc/letsencrypt/live/${main_domain}"
+    local CLOUDFLARE_MAP_FILE="/etc/nginx/sites-available/cloudflare-map.conf"
 
-    # Defensive input validation
     [ -z "$domains" ]     && die "No domains provided to setup_nginx_configs()"
     [ -z "$main_domain" ] && die "No main domain provided to setup_nginx_configs()"
 
     info "Setting up final Nginx configuration (after certificates)..."
 
-    # Remove default site to prevent conflicts (already backed up earlier)
-    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+    # =============================================================================
+    # 1. Backup nginx.conf
+    # =============================================================================
+    local backup_date
+    backup_date=$(date +%Y%m%d)
 
-    # Ensure web roots exist
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
     mkdir -p /var/www
     chmod 755 /var/www
 
     # =============================================================================
-    # Cloudflare IP Include File (Updated April 2026)
+    # 2. Cloudflare Map (http context)
     # =============================================================================
-    info "Creating/updating Cloudflare IP ranges include file..."
+    info "Creating Cloudflare IP detection map..."
 
-    cat > "${CLOUDFLARE_IPS_FILE}" << 'EOF'
-# =============================================================================
-# Cloudflare IP Ranges - Origin Protection
-# =============================================================================
-#
-# Official source: https://www.cloudflare.com/ips/
-# Last updated from official list: April 2026
-#
-# Purpose:
-#   These set_real_ip_from directives + real_ip_header + real_ip_recursive
-#   make Nginx see the real visitor IP instead of Cloudflare's IP.
-#
-#   Combined with "deny all;" in server blocks, this ensures:
-#     • Only legitimate Cloudflare traffic can reach your origin.
-#     • Direct access (bypassing Cloudflare) is blocked.
-#
-# Usage in server blocks:
-#   include ${CLOUDFLARE_IPS_FILE};
-#   deny all;
-#
-# Maintenance:
-#   Cloudflare ranges change rarely. Check https://www.cloudflare.com/ips/
-#   periodically and re-run: ${APP_NAME} nginx-conf
-# =============================================================================
+    cat > ${CLOUDFLARE_MAP_FILE} << 'EOF'
+map $remote_addr $is_cf {
+    default 0;
+    # Official Cloudflare IPv4 ranges (April 2026)
+    103.21.244.0/22     1;
+    103.22.200.0/22     1;
+    103.31.4.0/22       1;
+    104.16.0.0/13       1;
+    104.24.0.0/14       1;
+    108.162.192.0/18    1;
+    131.0.72.0/22       1;
+    141.101.64.0/18     1;
+    162.158.0.0/15      1;
+    172.64.0.0/13       1;
+    173.245.48.0/20     1;
+    188.114.96.0/20     1;
+    190.93.240.0/20     1;
+    197.234.240.0/22    1;
+    198.41.128.0/17     1;
 
-# IPv4 ranges
-set_real_ip_from 103.21.244.0/22;
-set_real_ip_from 103.22.200.0/22;
-set_real_ip_from 103.31.4.0/22;
-set_real_ip_from 104.16.0.0/13;
-set_real_ip_from 104.24.0.0/14;
-set_real_ip_from 108.162.192.0/18;
-set_real_ip_from 131.0.72.0/22;
-set_real_ip_from 141.101.64.0/18;
-set_real_ip_from 162.158.0.0/15;
-set_real_ip_from 172.64.0.0/13;
-set_real_ip_from 173.245.48.0/20;
-set_real_ip_from 188.114.96.0/20;
-set_real_ip_from 190.93.240.0/20;
-set_real_ip_from 197.234.240.0/22;
-set_real_ip_from 198.41.128.0/17;
-
-# IPv6 ranges
-set_real_ip_from 2400:cb00::/32;
-set_real_ip_from 2606:4700::/32;
-set_real_ip_from 2803:f800::/32;
-set_real_ip_from 2405:b500::/32;
-set_real_ip_from 2405:8100::/32;
-set_real_ip_from 2a06:98c0::/29;
-set_real_ip_from 2c0f:f248::/32;
-
-real_ip_header CF-Connecting-IP;
-real_ip_recursive on;
-EOF
-
-    chmod 644 "${CLOUDFLARE_IPS_FILE}"
-
-    # =============================================================================
-    # Global HTTP Redirect + ACME Challenge Server
-    # =============================================================================
-    info "Creating Global HTTP Redirect ..."
-    cat > /etc/nginx/sites-available/redirect.conf << 'EOF'
-server {
-    listen 80;
-    listen [::]:80;
-    server_name _;
-
-    # ACME challenge support (used by Certbot renewals)
-    location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
-        try_files $uri =404;
-    }
-
-    # Redirect everything else to HTTPS
-    return 301 https://$server_name$request_uri;
+    # Official Cloudflare IPv6 ranges
+    2400:cb00::/32      1;
+    2606:4700::/32      1;
+    2803:f800::/32      1;
+    2405:b500::/32      1;
+    2405:8100::/32      1;
+    2a06:98c0::/29      1;
+    2c0f:f248::/32      1;
 }
 EOF
 
-    ln -sf /etc/nginx/sites-available/redirect.conf /etc/nginx/sites-enabled/
+    chmod 644 ${CLOUDFLARE_MAP_FILE}
+    ln -s ${CLOUDFLARE_MAP_FILE} /etc/nginx/sites-enabled/
+    if ! grep -q "cloudflare-map.conf" /etc/nginx/nginx.conf; then
+        sed -i "/http[[:space:]]*{/a \    include ${CLOUDFLARE_MAP_FILE};" /etc/nginx/nginx.conf
+    fi
 
     # =============================================================================
-    # Per-Domain Configs, DocRoot and HTML Samples
+    # 3. Per-Domain Configs
     # =============================================================================
-    info "Creating per-domain conf, DocRoot and HTML Samples..."
-
     for domain in $domains; do
-        # Create document root and basic placeholder page
-        info "Creating DocRoot: /var/www/${domain} and HTML samples.."
         mkdir -p "/var/www/${domain}"
-        cat > "/var/www/${domain}/index.html" << EOF
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>${domain}</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 100px; background: #f4f4f4; }
-        h1 { color: #2c3e50; }
-    </style>
-</head>
-<body>
-    <h1>${domain}</h1>
-    <p>This domain is now secured with Let's Encrypt.</p>
-    <p>Nginx is running behind Cloudflare with origin protection enabled.</p>
-</body>
-</html>
-EOF
-        chmod -R 755 "/var/www/${domain}"
+        chmod 755 "/var/www/${domain}"
 
-        # HTTPS server block with Cloudflare protection
+        cat > "/var/www/${domain}/index.html" << EOF
+<!DOCTYPE html><html><head><title>${domain}</title></head><body style="font-family:Arial;text-align:center;padding:100px;">
+<h1>${domain}</h1><p>Protected by Cloudflare + Nginx</p></body></html>
+EOF
+
         cat > "/etc/nginx/sites-available/${domain}.conf" << EOF
+# =============================================================================
+# Simple and Reliable $has_cf variable
+# =============================================================================
+map \$http_cf_connecting_ip \$has_cf {
+    default "NO";                    # No header = direct access / not Cloudflare
+    "~." "YES";                      # Any non-empty value = coming from Cloudflare
+}
+include ${CLOUDFLARE_MAP_FILE};
+
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
@@ -2740,7 +2695,6 @@ server {
     root /var/www/${domain};
     index index.html;
 
-    # Certificate paths (shared cert for main domain + all SANs)
     ssl_certificate ${cert_path}/fullchain.pem;
     ssl_certificate_key ${cert_path}/privkey.pem;
 
@@ -2748,50 +2702,52 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers off;
 
-EOF
+    # ====================== CLOUD FLARE CHECK PAGE ======================
+    location = /cloudflare-check {
+        default_type text/html;
+        return 200 '
+<!DOCTYPE html>
+<html>
+<head><title>Cloudflare Check - ${domain}</title></head>
+<body style="font-family:Arial,sans-serif;text-align:center;padding:50px;background:#f8f9fa;">
+    <h1>Cloudflare Check</h1>
+    <p style="font-size:2.8em;color:#0066cc;font-weight:bold;">\$remote_addr</p>
+    <p><strong>From Cloudflare?</strong> \$is_cf (1 = Yes)</p>
+    <p><strong>CF Connecting IP:</strong> \$http_cf_connecting_ip</p>
+    <p><strong>Is Cloudflare?</strong> 
+        <span style="color: #0066cc; font-weight:bold;">
+            \$has_cf
+        </span>
+    </p>
+    <p><strong>Ray ID:</strong> \$http_cf_ray</p>
+    <hr>
+    <p style="color:green;">This page is open to everyone (bypassing protection)</p>
+</body>
+</html>';
+    }
+    # ============================================================
 
-        if [ "${USE_CLOUDFLARE}" -eq 1 ]; then
-            cat >> "/etc/nginx/sites-available/${domain}.conf" << EOF
-    # Cloudflare origin protection
-    include ${CLOUDFLARE_IPS_FILE};
-    deny all;
-EOF
-        else
-            cat >> "/etc/nginx/sites-available/${domain}.conf" << EOF
-    # No Cloudflare protection - open to all IPs
-    allow all;
-EOF
-        fi
+    location / {
+        if (\$http_cf_connecting_ip = "") {
+            return 403;
+        }
+        try_files \$uri \$uri/ =404;
+    }
 
-        cat >> "/etc/nginx/sites-available/${domain}.conf" << EOF
-
-    # ACME challenge support (for renewals)
     location /.well-known/acme-challenge/ {
         root /var/www/letsencrypt;
         try_files \$uri =404;
     }
-
-    # Add your custom locations here later (e.g. proxy_pass to applications)
-    # Example:
-    # location / {
-    #     try_files \$uri \$uri/ =404;
-    # }
 }
 EOF
 
         ln -sf "/etc/nginx/sites-available/${domain}.conf" /etc/nginx/sites-enabled/
     done
 
-    # =============================================================================
-    # Final ownership enforcement (1.9.0 requirement)
-    # =============================================================================
     setup_nginx_adm_ownership
 
-    info "Nginx configuration files created successfully."
-    info "→ Only Cloudflare IPs can access the sites (if enabled)."
-    info "→ Certificate used: ${cert_path}/fullchain.pem (main domain: ${main_domain})"
-    info "→ HTTP traffic is redirected to HTTPS."
-    info "→ All config files are now owned by nginx-adm."
+    info "Nginx configuration completed successfully."
+    info "→ Debug page is now available at: https://${main_domain}/cloudflare-check"
 }
 
 # =============================================================================
