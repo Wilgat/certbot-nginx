@@ -12,7 +12,7 @@ A single-file, self-installing shell script that installs and configures Nginx w
 
 ## ✨ Key Features (v1.9.0)
 
-- One-command installation: `curl | sudo bash`
+- One-command installation: `curl | sh` / `curl | sudo sh`
 - **nginx-adm least-privilege user** — most operations no longer require full root
 - Explicit interactive choice of the **primary/main domain**
 - Automatic Let's Encrypt certificate issuance using `--standalone`
