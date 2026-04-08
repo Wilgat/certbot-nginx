@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.10.0
+# certbot-nginx – version 1.11.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -26,7 +26,7 @@
 # Last aligned: April 2026
 # =============================================================================
 #
-# PROJECT INTENTION (1.10.0)
+# PROJECT INTENTION
 # =============================================================================
 #
 # The primary goal of certbot-nginx is to provide a **more secure, auditable,
@@ -106,7 +106,7 @@
 #    • /etc/nginx/sites-enabled  → symlink to /etc/nginx-adm/sites-enabled
 #    • /etc/nginx/sites-available → symlink to /etc/nginx-adm/sites-available
 #    • A restricted sudoers rule allows nginx-adm to run:
-#        systemctl start/stop/reload/restart nginx   (NOPASSWD)
+#        systemctl start/stop/reload/restart/status nginx   (NOPASSWD)
 #    • Because nginx-adm owns /etc/nginx, "nginx -t" can be executed directly
 #      as nginx-adm — no sudo is required for configuration testing.
 #    • This design allows future configuration/renewal operations to run as
@@ -2129,10 +2129,6 @@ get_or_set_email() {
 #   • fuser -k 80/tcp (aggressive kill of anything listening on port 80)
 #   • Short sleep to allow ports to fully release
 #
-# New in 1.10.0:
-#   • Attempts stop via nginx-adm sudo first (least privilege)
-#   • Falls back to direct systemctl
-#
 # !!! THIS FUNCTION MUST REMAIN EARLY IN BOTH INTERACTIVE AND NON-INTERACTIVE FLOWS !!!
 # !!! DO NOT REMOVE THE fuser KILL OR SOFTEN THIS BEHAVIOR !!!
 # !!! DO NOT START NGINX BEFORE CERTIFICATES ARE APPLIED !!!
@@ -2141,11 +2137,7 @@ get_or_set_email() {
 stop_nginx_early() {
     info "Stopping nginx and any process listening on port 80..."
 
-    # Prefer nginx-adm (least privilege)
-    sudo -u nginx-adm systemctl stop nginx 2>/dev/null || true
-
-    # Fallback
-    systemctl stop nginx 2>/dev/null || true
+    sudo systemctl stop nginx 2>/dev/null || true
 
     fuser -k 80/tcp 2>/dev/null || true
 
@@ -3122,68 +3114,71 @@ create_nginx_adm_user() {
 }
 
 # =============================================================================
-# setup_nginx_adm_ownership() - Set ownership and symlinks (Fixed for 1.9.0 in 1.10.0)
+# setup_nginx_adm_ownership() - Set ownership and symlinks (Fixed for 1.9.0)
 # =============================================================================
 #
 # CRITICAL FUNCTION - PART OF nginx-adm LEAST-PRIVILEGE MODEL
 #
 # Purpose:
-#   Ensures nginx-adm owns the configuration directories and sets up correct symlinks.
+#   Ensures nginx-adm owns the configuration and sets up correct symlinks:
+#     /etc/nginx/sites-available  → symlink to /etc/nginx-adm/sites-available
+#     /etc/nginx/sites-enabled    → symlink to /etc/nginx-adm/sites-enabled
 #
-# Important Fixes:
+# Important Rules:
 #   • Does NOT recreate user (only ownership and symlinks)
+#   • Real directories live under /etc/nginx/ (never delete them)
+#   • Only create symlinks in /etc/nginx-adm/ if they don't exist or are broken
 #   • Preserves existing files in /etc/nginx-adm when user is recreated
+#   • Never need to create /etc/nginx-adm (which is the home directory of user: nginx-adm)
 #   • Correct symlink direction: /etc/nginx/sites-* → /etc/nginx-adm/sites-*
-#   • Uses chown -R nginx-adm:root as per your recommendation
-#   • Uses 775 permissions for better group access
-#   • Defensive: never deletes real config directories without backup
+#   • Never rm -rf real config directories
+#   • Ownership: nginx-adm:root (as per your test)
+#   • Permissions: 775 for practical group access
 #
 # !!! MUST BE CALLED AFTER create_nginx_adm_user() !!!
 # =============================================================================
 
 setup_nginx_adm_ownership() {
-    info "Setting nginx-adm ownership on configuration directories..."
+    info "Setting nginx-adm ownership and symlinks..."
 
-    # Ensure base directories exist (do not delete existing content)
-    mkdir -p /etc/nginx-adm/sites-available
-    mkdir -p /etc/nginx-adm/sites-enabled
-    mkdir -p /etc/nginx 2>/dev/null || true
+    # 1. Ensure real directories exist under nginx (never delete content)
+    mkdir -p /etc/nginx/{sites-available,sites-enabled}
 
-    # Transfer ownership - nginx-adm:root (as per your test)
+
+    # 3. Transfer ownership
     chown -R nginx-adm:root /etc/nginx 2>/dev/null || true
-    chown -R nginx-adm:root /etc/nginx-adm 2>/dev/null || true
 
-    # Create symlinks from /etc/nginx → /etc/nginx-adm (correct direction)
+    # 4. Create symlinks in /etc/nginx/ pointing to /etc/nginx-adm/ (correct direction)
     for dir in sites-available sites-enabled; do
-        target="/etc/nginx/${dir}"
-        link_source="/etc/nginx-adm/${dir}"
+        local source="/etc/nginx/${dir}"
+        local target="/etc/nginx-adm/${dir}"
 
-        # If it's a real directory (not symlink), back it up first then remove
-        if [ -d "${target}" ] && [ ! -L "${target}" ]; then
-            local today=$(date +%Y%m%d)
-            local count=1
-            while [ -f "/etc/nginx/${dir}.${today}-${count}.bak" ]; do
-                count=$((count + 1))
-            done
-            cp -a "${target}" "/etc/nginx/${dir}.${today}-${count}.bak" 2>/dev/null || true
-            info "Backed up real directory ${target} before symlink creation."
-            rm -rf "${target}" 2>/dev/null || true
-        fi
+        # If the target is NOT already a symlink to the correct location, fix it
+        if [ ! -L "${target}" ] || [ "$(readlink "${target}")" != "${source}" ]; then
 
-        # Create symlink if it doesn't exist or is broken
-        if [ ! -L "${target}" ]; then
-            ln -sf "${link_source}" "${target}"
-            info "Created symlink: ${target} → ${link_source}"
+            # If it's a real directory, back it up first (safety)
+            if [ -d "${target}" ] && [ ! -L "${target}" ]; then
+                local today=$(date +%Y%m%d)
+                local count=1
+                while [ -f "${target}.${today}-${count}.bak" ]; do
+                    count=$((count + 1))
+                done
+                cp -a "${target}" "${target}.${today}-${count}.bak" 2>/dev/null || true
+                info "Backed up real directory ${target} before creating symlink."
+                rm -rf "${target}" 2>/dev/null || true
+            fi
+
+            ln -sf "${source}" "${target}"
+            info "Created/updated symlink: ${target} → ${source}"
         fi
     done
 
-    # Set proper permissions
+    # 5. Set permissions
     chmod 775 /etc/nginx 2>/dev/null || true
-    chmod 775 /etc/nginx-adm 2>/dev/null || true
     chmod 775 /etc/nginx-adm/sites-available 2>/dev/null || true
     chmod 775 /etc/nginx-adm/sites-enabled 2>/dev/null || true
 
-    success "nginx-adm ownership and symlinks configured successfully."
+    success "nginx-adm ownership and correct symlinks configured."
 }
 
 # =============================================================================
@@ -3233,14 +3228,23 @@ setup_restricted_sudoers() {
         info "Backed up existing sudoers file → ${backup_file}"
     fi
 
-    # Write the new restricted sudoers file
+    # Write the new restricted sudoers file (remember leave a blank line at the end)
     cat > "${sudoers_file}" << 'EOF'
-# nginx-adm restricted sudoers - certbot-nginx 1.9.0
+# nginx-adm restricted sudoers - certbot-nginx
 # Allows nginx-adm to control nginx service without password (least privilege)
-nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl start nginx, \
-                             /bin/systemctl stop nginx, \
-                             /bin/systemctl reload nginx, \
-                             /bin/systemctl restart nginx
+nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl start nginx
+nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl stop nginx
+nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
+nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
+nginx-adm ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
+nginx-adm ALL=(ALL) NOPASSWD: /bin/journalctl -u nginx
+nginx-adm ALL=(ALL) NOPASSWD: /usr/bin/systemctl start nginx
+nginx-adm ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop nginx
+nginx-adm ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx
+nginx-adm ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx
+nginx-adm ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx
+nginx-adm ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u nginx
+nginx-adm ALL=(ALL) NOPASSWD: /usr/sbin/nginx
 
 EOF
 
