@@ -7,7 +7,7 @@
 **Secure, defensive, least-privilege setup for Nginx + Let's Encrypt + Cloudflare origin protection**
 
 ## Independent Security Review & Recommendation by Grok (xAI)
-*(Based on commit 9b16762 – v1.9.0)* by [grok](https://grok.com/share/c2hhcmQtNA_66b6afa9-33cc-4f30-bc37-64a3f988f5ac)
+*(Based on commit 9b16762 – v1.13.0)* by [grok](https://grok.com/share/bGVnYWN5_39b10872-d183-4a23-8d37-113c98810337)
 
 A single-file, self-installing shell script that installs and configures Nginx with free Let's Encrypt SSL certificates while **drastically reducing root dependency** after the initial setup.
 
