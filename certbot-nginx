@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.13.0
+# certbot-nginx – version 1.14.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -257,7 +257,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.13.0"
+VERSION="1.14.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -2283,10 +2283,28 @@ apply_certificates() {
 #   • Duplication of port 80 stop is deliberate (defense in depth).
 #   • The certificate will be stored at: /etc/letsencrypt/live/${main_domain}/
 #
+# LESSON LEARNED (April 2026 - Critical for Domain Expansion):
+#   When adding a new domain to an existing certificate (e.g. adding slip.nifty-corner.com
+#   to a cert that already contains crms.hk + other domains), Certbot will stop with:
+#     "You have an existing certificate that contains a portion of the domains you requested"
+#     and ask whether to expand the certificate.
+#
+#   Because the script runs with --non-interactive, this prompt causes failure.
+#
+#   SOLUTION:
+#   • Always include --expand on the primary certbot call when domains may change.
+#   • Use --cert-name "$main_domain" to make behavior explicit and reliable.
+#   • Provide a fallback (without --expand) for the very first certificate issuance.
+#   • This prevents the "expand" confirmation error when the domain list grows.
+#
+#   Recommended command pattern:
+#     certbot certonly --standalone --expand --cert-name "$main_domain" --domains ...
+#
 # !!! THIS FUNCTION MUST BE CALLED ONLY AFTER stop_nginx_early() !!!
 # !!! DO NOT MOVE THIS AFTER setup_nginx_configs() !!!
 # !!! DO NOT USE --nginx PLUGIN IN THE MAIN INTERACTIVE FLOW !!!
 # !!! THE USER-CHOSEN MAIN DOMAIN MUST REMAIN THE FIRST DOMAIN IN THE LIST !!!
+# !!! ALWAYS INCLUDE --expand + --cert-name TO SUPPORT DOMAIN EXPANSION !!!
 # =============================================================================
 
 apply_letsencrypt_standalone() {
@@ -2294,43 +2312,48 @@ apply_letsencrypt_standalone() {
     local email="$2"
     local main_domain="$3"
 
-    # Defensive: never assume directories or parameters exist
     ensure_letsencrypt_structure
 
     [ -z "$domains" ]     && die "No domains provided to apply_letsencrypt_standalone()"
     [ -z "$email" ]       && die "No email provided to apply_letsencrypt_standalone()"
     [ -z "$main_domain" ] && die "No main domain provided to apply_letsencrypt_standalone()"
 
-    info "Stopping any service on port 80 again (defense in depth)..."
+    info "Stopping any service on port 80 (defense in depth)..."
     systemctl stop nginx 2>/dev/null || true
     fuser -k 80/tcp 2>/dev/null || true
     sleep 2
 
-    # Build clean domain list with user-chosen main_domain forced first
-    local other_domains
-    other_domains=$(echo "$domains" | tr ' ' '\n' | grep -v "^$main_domain$" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
-
-    local cert_domains="$main_domain $other_domains"
-    cert_domains=$(echo "$cert_domains" | tr -s ' ' | sed 's/^ *//;s/ *$//')
-
     local cert_domains_comma
-    cert_domains_comma=$(echo "$cert_domains" | tr ' ' ',')
+    cert_domains_comma=$(echo "$domains" | tr ' ' ',')
 
-    info "Requesting Let's Encrypt certificate with ${main_domain} as primary Common Name..."
+    info "Requesting Let's Encrypt certificate with ${main_domain} as primary domain..."
 
-    certbot certonly --standalone \
+    # Primary attempt: use --expand (best when adding domains to an existing cert)
+    if ! certbot certonly --standalone \
         --email "$email" \
         --agree-tos \
         --non-interactive \
-        --allow-subset-of-names \
-        --domains "$cert_domains_comma" || die "Certbot failed to obtain certificates."
+        --expand \
+        --cert-name "$main_domain" \
+        --domains "$cert_domains_comma"; then
 
-    # Critical verification - ensure certificate was written under the correct main domain
+        # Fallback for completely new certificate (first run)
+        info "→ Expand not applicable (new certificate), falling back..."
+        certbot certonly --standalone \
+            --email "$email" \
+            --agree-tos \
+            --non-interactive \
+            --allow-subset-of-names \
+            --cert-name "$main_domain" \
+            --domains "$cert_domains_comma" || die "Certbot failed to obtain certificates."
+    fi
+
+    # Critical verification
     if [ ! -f "/etc/letsencrypt/live/${main_domain}/fullchain.pem" ]; then
         die "Certificate files were not created under the main domain: ${main_domain}"
     fi
 
-    success "Let's Encrypt certificates obtained successfully."
+    success "✅ Let's Encrypt certificates obtained successfully."
     success "Primary certificate directory: /etc/letsencrypt/live/${main_domain}/"
 }
 
