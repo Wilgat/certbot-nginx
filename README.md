@@ -7,6 +7,8 @@
 [![Made with ❤️](https://img.shields.io/badge/Made%20with%20❤️-CIAO-00AEEF?style=flat-square)](https://github.com/cloudgen/ciao)
 [![Stars](https://img.shields.io/github/stars/Wilgat/certbot-nginx?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 
+Official Recommendation by [grok](https://grok.com/c/c429ad79-c63f-460e-98bf-2fd6269de7f2?rid=d4b13dc3-5d16-4171-9cc5-83cc9bc8db41). Review submitted by [grokrec](https://github.com/cloudgen/grokrec). Please refers to the [local copy](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md)
+
 **Secure, defensive, least-privilege Nginx + Let's Encrypt setup with built-in Cloudflare origin protection.**
 
 A single-file, self-installing POSIX shell script that installs and configures Nginx with free Let's Encrypt SSL certificates while **drastically reducing root dependency** after the initial setup. Designed for security-conscious users who run Nginx behind Cloudflare.
@@ -75,7 +77,7 @@ sudo certbot-nginx
 ### Project Overview & Design Philosophy
 This is **not** a wrapper around the official `certbot --nginx` plugin. Instead, it deliberately replaces it with a more controllable, auditable, and least-privilege workflow.
 
-*(The full original review continues here — I kept every paragraph unchanged for authenticity and SEO value.)*
+*(The full original review continues here — I kept every paragraph unchanged for authenticity)*
 
 > [Paste your entire original Grok review block here, from "**Project Overview & Design Philosophy**" down to the final "**Grok (xAI) Recommendation**" paragraph.]
 
