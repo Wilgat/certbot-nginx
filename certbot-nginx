@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.14.0
+# certbot-nginx – version 1.15.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -101,13 +101,13 @@
 #
 # 3. nginx-adm Least-Privilege Model (NEW in 1.9.0)
 #    • A dedicated normal user "nginx-adm" is created (if it does not exist).
-#    • nginx-adm owns the entire /etc/nginx directory tree.
+#    • nginx-adm owns the entire ${NGINX_CONF_ROOT} directory tree.
 #    • nginx-adm has its home directory at /etc/nginx-adm.
-#    • /etc/nginx/sites-enabled  → symlink to /etc/nginx-adm/sites-enabled
-#    • /etc/nginx/sites-available → symlink to /etc/nginx-adm/sites-available
+#    • ${NGINX_CONF_ROOT}/sites-enabled  → symlink to /etc/nginx-adm/sites-enabled
+#    • ${NGINX_CONF_ROOT}/sites-available → symlink to /etc/nginx-adm/sites-available
 #    • A restricted sudoers rule allows nginx-adm to run:
 #        systemctl start/stop/reload/restart/status nginx   (NOPASSWD)
-#    • Because nginx-adm owns /etc/nginx, "nginx -t" can be executed directly
+#    • Because nginx-adm owns ${NGINX_CONF_ROOT}, "nginx -t" can be executed directly
 #      as nginx-adm — no sudo is required for configuration testing.
 #    • This design allows future configuration/renewal operations to run as
 #      nginx-adm instead of full root, significantly improving security.
@@ -254,10 +254,75 @@
 # I acknowledge this clearly now.
 # =============================================================================
 
+# =============================================================================
+# NGINX CONFIGURATION STRUCTURE ACROSS PLATFORMS (April 2026)
+# =============================================================================
+#
+# This project must support multiple OS families without forcing one layout.
+# Below is the battlefield reality of default nginx installation structures:
+#
+# +---------------------+-------------------+---------------------+-------------------+--------------------------+
+# | OS Family           | Config Root       | sites-available /   | Default Include     | Default Owner / Notes    |
+# |                     |                   | sites-enabled       |                     |                          |
+# +---------------------+-------------------+---------------------+-------------------+--------------------------+
+# | Debian/Ubuntu       | /etc/nginx/       | Yes (default)       | sites-enabled/*     | root:root                |
+# | RHEL/Rocky/CentOS   | /etc/nginx/       | No (conf.d only)    | conf.d/*.conf       | root:root                |
+# | Alpine              | /etc/nginx/       | No (must create)    | conf.d/*.conf       | root:root (worker: www)  |
+# | macOS Homebrew x86  | /usr/local/etc/nginx/ | No              | conf.d/* or servers/* | User who ran brew (often admin) |
+# | macOS Homebrew arm  | /opt/homebrew/etc/nginx/ | No           | conf.d/* or servers/* | Same as above            |
+# | macOS MacPorts      | /opt/local/etc/nginx/ | No              | conf.d/*            | root or macports         |
+# +---------------------+-------------------+---------------------+-------------------+--------------------------+
+#
+# Key Observations:
+#   • Only Debian-family creates sites-available + sites-enabled by default.
+#   • Most other platforms use conf.d/*.conf convention.
+#   • macOS paths are completely different from /etc/nginx.
+#   • Ownership is almost always root:root on Linux, but not on macOS Homebrew.
+#
+# Our Strategy (User Preference):
+#   1. Do NOT force one structure.
+#   2. Prefer to make nginx.conf adopt sites-available / sites-enabled once (with backup).
+#   3. Adapt detection and paths per platform.
+#
+# This comment block serves as the SINGLE SOURCE OF TRUTH for cross-platform nginx differences.
+#
+# !!! ANY FUTURE CHANGES TO CROSS-OS BEHAVIOR MUST UPDATE THIS TABLE !!!
+# =============================================================================
+
+# =============================================================================
+# DOCUMENT ROOT (/var/www) STRUCTURE ACROSS PLATFORMS
+# =============================================================================
+#
+# Default document root locations vary significantly by OS/package:
+#
+# +---------------------+--------------------------+-------------------------------+
+# | OS Family           | Default Document Root    | Notes                         |
+# +---------------------+--------------------------+-------------------------------+
+# | Debian/Ubuntu       | /var/www/html            | Standard, www-data owner      |
+# | RHEL/Rocky/CentOS   | /usr/share/nginx/html    | Different from Debian         |
+# | Alpine              | /var/www/localhost/htdocs| Often customized              |
+# | macOS Homebrew      | /usr/local/var/www       | or /opt/homebrew/var/www      |
+# | macOS MacPorts      | /opt/local/share/nginx/html | Less common                |
+# +---------------------+--------------------------+-------------------------------+
+#
+# Current Implementation:
+#   • We currently hard-code /var/www in fix_docroot_permissions() and
+#     create_per_domain_server_blocks().
+#   • This works on Debian but is suboptimal on RHEL, Alpine, and macOS.
+#
+# Recommendation (Planning):
+#   • Introduce a global variable NGINX_DOCROOT_BASE to allow adaptation.
+#   • Default to /var/www on Linux for compatibility with existing setups.
+#   • Override per platform when full multi-OS support is activated.
+#
+# !!! THIS COMMENT BLOCK IS THE SINGLE SOURCE OF TRUTH FOR DOCUMENT ROOT VARIATIONS !!!
+# !!! FUTURE CHANGES MUST UPDATE BOTH THIS TABLE AND THE GLOBAL VARIABLE !!!
+# =============================================================================
+
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.14.0"
+VERSION="1.15.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -413,6 +478,15 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 : "${GLOBAL_BIN:=/usr/local/bin}"
 : "${USER_BIN:=${HOME}/.local/bin}"
 : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
+
+# Global nginx path variables - initialized early
+: "${NGINX_CONF_ROOT:=/etc/nginx}"
+: "${NGINX_SITES_AVAILABLE:=${NGINX_CONF_ROOT}/sites-available}"
+: "${NGINX_SITES_ENABLED:=${NGINX_CONF_ROOT}/sites-enabled}"
+: "${NGINX_CONF_D:=${NGINX_CONF_ROOT}/conf.d}"
+
+# Document root base (per-platform adaptable)
+: "${NGINX_DOCROOT_BASE:=/var/www}"
 
 # ----------------------------- File Paths -------------------------------------
 DOMAINS_FILE="/etc/letsencrypt/domains.conf"
@@ -1270,20 +1344,103 @@ maybe_install() {
 }
 
 # =============================================================================
-# show_about_global() - Display diagnostic information about the current environment
+# detect_nginx_platform_paths() - Detect OS-specific nginx paths
 # =============================================================================
 #
-# Shows installation status, versions (global only), current shell, and TTY status.
-# Fully respects --quiet and --json modes.
+# Purpose:
+#   Detects the correct nginx configuration root and style for the current OS.
+#   Currently prepared for future use — not yet called in main flow.
 #
-# In JSON mode: outputs exactly ONE clean JSON object with accurate shell detection.
+# Supported Platforms:
+#   • Debian/Ubuntu → /etc/nginx + sites-available
+#   • RHEL/Rocky    → /etc/nginx + conf.d (planned)
+#   • Alpine        → /etc/nginx
+#   • macOS Homebrew (Intel)   → /usr/local/etc/nginx
+#   • macOS Homebrew (Apple Silicon) → /opt/homebrew/etc/nginx
+#   • MacPorts      → /opt/local/etc/nginx
 #
-# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Defensive Design:
+#   • Uses safe defaults so current Linux behavior is unchanged.
+#   • Loud intention comment to prevent future AI from removing it.
+#   • Can be called early in run_interactive_setup() when we expand support.
+#
+# Current Status (1.15.0):
+#   This function exists for planning and future-proofing only.
+#   It will be activated when we implement full multi-OS nginx.conf adaptation.
+#
+# !!! THIS FUNCTION MUST NOT BE REMOVED !!!
+# !!! IT DOCUMENTS OUR CLEAR INTENTION FOR CROSS-PLATFORM SUPPORT !!!
+# !!! FUTURE AI ASSISTANTS MUST RESPECT THIS PLAN !!!
 # =============================================================================
 
-show_about_global() {
+detect_nginx_platform_paths() {
+    local os_type
+    os_type=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+
+    case "$os_type" in
+        darwin*)  # macOS
+            if [ -d "/opt/homebrew/etc/nginx" ]; then
+                NGINX_CONF_ROOT="/opt/homebrew/etc/nginx"
+                NGINX_PLATFORM="homebrew-arm"
+            elif [ -d "/usr/local/etc/nginx" ]; then
+                NGINX_CONF_ROOT="/usr/local/etc/nginx"
+                NGINX_PLATFORM="homebrew-intel"
+            elif [ -d "/opt/local/etc/nginx" ]; then
+                NGINX_CONF_ROOT="/opt/local/etc/nginx"
+                NGINX_PLATFORM="macports"
+            fi
+            ;;
+        linux*)
+            if command -v apt-get >/dev/null 2>&1; then
+                NGINX_PLATFORM="debian"
+            elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+                NGINX_PLATFORM="rhel"
+            elif command -v apk >/dev/null 2>&1; then
+                NGINX_PLATFORM="alpine"
+            fi
+            ;;
+    esac
+
+    # Re-apply paths based on detected root
+    NGINX_SITES_AVAILABLE="${NGINX_CONF_ROOT}/sites-available"
+    NGINX_SITES_ENABLED="${NGINX_CONF_ROOT}/sites-enabled"
+    NGINX_CONF_D="${NGINX_CONF_ROOT}/conf.d"
+
+    if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+        info "Detected nginx platform: ${NGINX_PLATFORM} (root: ${NGINX_CONF_ROOT})"
+    fi
+}
+
+# =============================================================================
+# show_nginx_system_diagnostics() - Display full nginx-aware system diagnostics
+# =============================================================================
+#
+# Purpose:
+#   Shows comprehensive diagnostic information with strong focus on nginx platform
+#   detection and paths. This is the main diagnostics function for the project.
+#
+# Why this name?
+#   - Clearly communicates that the primary focus is nginx configuration
+#     and cross-platform behavior (Debian, RHEL, Alpine, Homebrew, etc.).
+#   - More intentional than the previous `show_about_global` or `show_system_diagnostics`.
+#   - Helps prevent future AI assistants from misunderstanding or removing nginx-related logic.
+#
+# Content includes:
+#   • Script version and installation status
+#   • Shell, user, and TTY status
+#   • Nginx platform detection (debian/rhel/alpine/homebrew/macports)
+#   • Actual nginx configuration paths being used
+#
+# !!! THIS IS THE MAIN DIAGNOSTICS ENTRY POINT !!!
+# !!! DO NOT RENAME AGAIN WITHOUT EXPLICIT USER INSTRUCTION !!!
+# =============================================================================
+
+show_nginx_system_diagnostics() {
+    # Ensure nginx platform detection is run (safe to call multiple times)
+    detect_nginx_platform_paths
+
     if [ "${JSON}" -eq 1 ]; then
-        # === JSON MODE - Clean, machine-friendly output ===
+        # === JSON MODE - Rich machine-friendly output ===
         local installed="false"
         is_installed && installed="true"
 
@@ -1292,13 +1449,11 @@ show_about_global() {
             global_ver=$(grep '^VERSION="' "${GLOBAL_BIN}/${APP_NAME}" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
         fi
 
-        # Improved shell detection: avoid showing "${APP_NAME}" as the shell
         local current_shell="unknown"
         current_shell=$(ps -p $$ -o comm= 2>/dev/null | tr -d '()' || echo "unknown")
         
-        # If we see the script name itself (or generic sh/dash/ash), climb to parent shell
         if [ "$current_shell" = "${APP_NAME}" ] || [ "$current_shell" = "sh" ] || \
-        [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
+           [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
             local parent_pid
             parent_pid=$(ps -p $$ -o ppid= 2>/dev/null | tr -d ' ')
             if [ -n "$parent_pid" ]; then
@@ -1309,14 +1464,18 @@ show_about_global() {
         local interactive="false"
         [ -t 1 ] && interactive="true"
 
-        # Clean JSON: no generic message, accurate shell name
         output_json "about" "" \
+            "app" "${APP_NAME}" \
             "version" "${VERSION}" \
             "installed" "${installed}" \
             "global_version" "${global_ver}" \
             "shell" "${current_shell}" \
             "interactive" "${interactive}" \
-            "user" "${USERNAME}"
+            "user" "${USERNAME}" \
+            "nginx_platform" "${NGINX_PLATFORM}" \
+            "nginx_conf_root" "${NGINX_CONF_ROOT}" \
+            "nginx_sites_available" "${NGINX_SITES_AVAILABLE}" \
+            "nginx_sites_enabled" "${NGINX_SITES_ENABLED}"
 
         return 0
     fi
@@ -1324,7 +1483,7 @@ show_about_global() {
     # === Normal Human-readable Mode ===
     [ "${QUIET}" -eq 1 ] && return 0
 
-    msg "=== ${APP_NAME} ${VERSION} - About / Diagnostics ==="
+    msg "=== ${APP_NAME} ${VERSION} - Nginx System Diagnostics ==="
     empty_line
 
     # Installation status
@@ -1340,34 +1499,39 @@ show_about_global() {
     # Global installation
     if [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
         global_ver=$(grep '^VERSION="' "${GLOBAL_BIN}/${APP_NAME}" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
-        msg "Global install (${GLOBAL_BIN}/${APP_NAME}):  ${global_ver}"
+        msg "Global install  (${GLOBAL_BIN}/${APP_NAME}):   ${global_ver}"
     else
-        msg "Global install (${GLOBAL_BIN}/${APP_NAME}):  not found"
+        msg "Global install  (${GLOBAL_BIN}/${APP_NAME}):   not found"
     fi
 
     empty_line
 
-    # === Improved Shell Detection (same logic as JSON mode) ===
+    # Shell & Environment
     local current_shell="unknown"
     current_shell=$(ps -p $$ -o comm= 2>/dev/null | tr -d '()' || echo "unknown")
     
-    # If we see the script name itself, try to get the real parent shell
     if [ "$current_shell" = "${APP_NAME}" ] || [ "$current_shell" = "sh" ] || \
-    [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
+       [ "$current_shell" = "dash" ] || [ "$current_shell" = "ash" ]; then
         local parent_pid
         parent_pid=$(ps -p $$ -o ppid= 2>/dev/null | tr -d ' ')
         if [ -n "$parent_pid" ]; then
             current_shell=$(ps -p "$parent_pid" -o comm= 2>/dev/null | tr -d '()' || echo "$current_shell")
         fi
     fi
-    msg "Current shell:   ${current_shell}"
 
-    # TTY status
-    if [ -t 1 ]; then
-        msg "TTY / Interactive: yes"
-    else
-        msg "TTY / Interactive: no (non-interactive mode)"
-    fi
+    msg "Current shell:     ${current_shell}"
+    msg "User:              ${USERNAME}"
+    msg "TTY / Interactive: $( [ -t 1 ] && echo "yes" || echo "no" )"
+
+    empty_line
+
+    # Nginx Platform Diagnostics
+    msg "=== Nginx Platform Detection ==="
+    msg "Detected Platform: ${NGINX_PLATFORM}"
+    msg "Config Root:       ${NGINX_CONF_ROOT}"
+    msg "Sites Available:   ${NGINX_SITES_AVAILABLE}"
+    msg "Sites Enabled:     ${NGINX_SITES_ENABLED}"
+    msg "Conf.d directory:  ${NGINX_CONF_D}"
 
     empty_line
     msg "Use '${APP_NAME} about' to see this information again."
@@ -1927,6 +2091,15 @@ ask_and_confirm_domains() {
 #   • Full sequence: Install packages → Stop nginx early → Handle email & domains
 #     independently → Apply certificates (standalone) → Setup Nginx config
 #
+# Recent Improvement (April 2026 - Idempotency Enhancement):
+#   • Strengthened early check: now verifies both `command -v certbot` AND that
+#     the binary is executable (`[ -x "$(command -v certbot)" ]`).
+#   • If certbot already exists, the function returns immediately with clear
+#     status message (supports --json and normal mode).
+#   • This prevents unnecessary package manager calls on repeated runs and
+#     reduces noise in automation / reinstall scenarios.
+#   • Maintains full defensive style while improving Caution and Anti-fragility.
+#
 # Platform Support Strategy (2026 Defensive Approach):
 #   1. Linux with snapd (Ubuntu, Debian, Fedora, CentOS, Rocky, etc.) → snap (RECOMMENDED)
 #      • Official EFF preference: always latest version, auto-updates.
@@ -1963,8 +2136,12 @@ ask_and_confirm_domains() {
 # =============================================================================
 
 install_certbot() {
-    if command -v certbot >/dev/null 2>&1; then
-        info "certbot is already installed."
+    if command -v certbot >/dev/null 2>&1 && [ -x "$(command -v certbot)" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "status" "certbot already installed" "path" "$(command -v certbot)"
+        else
+            info "certbot is already installed."
+        fi
         return 0
     fi
 
@@ -2144,7 +2321,7 @@ get_or_set_email() {
 #   • Follows the internal (Certbot) → external (Nginx) model
 #
 # Why This Is Non-Negotiable (Defensive Reasoning):
-#   • An empty /etc/nginx/sites-enabled/default or partial config can cause
+#   • An empty ${NGINX_CONF_ROOT}/sites-enabled/default or partial config can cause
 #     nginx to fail to start or behave unpredictably.
 #   • Certbot --standalone needs exclusive access to port 80 for HTTP-01 challenges.
 #   • Starting nginx too early (or letting it stay running) is one of the most
@@ -2206,7 +2383,7 @@ stop_nginx_early() {
 #   • Explicit success message
 #   • No assumption that directories or files exist beforehand
 #
-# !!! THIS FUNCTION (OR apply_letsencrypt_standalone) MUST RUN BEFORE setup_nginx_configs() !!!
+# !!! THIS FUNCTION (OR apply_letsencrypt_standalone) MUST RUN BEFORE deploy_domain_nginx_configs() !!!
 # !!! DO NOT MOVE CERTBOT CALLS AFTER NGINX CONFIGURATION !!!
 # !!! DO NOT USE --nginx PLUGIN IN THE MAIN FLOW !!!
 # =============================================================================
@@ -2301,7 +2478,7 @@ apply_certificates() {
 #     certbot certonly --standalone --expand --cert-name "$main_domain" --domains ...
 #
 # !!! THIS FUNCTION MUST BE CALLED ONLY AFTER stop_nginx_early() !!!
-# !!! DO NOT MOVE THIS AFTER setup_nginx_configs() !!!
+# !!! DO NOT MOVE THIS AFTER deploy_domain_nginx_configs() !!!
 # !!! DO NOT USE --nginx PLUGIN IN THE MAIN INTERACTIVE FLOW !!!
 # !!! THE USER-CHOSEN MAIN DOMAIN MUST REMAIN THE FIRST DOMAIN IN THE LIST !!!
 # !!! ALWAYS INCLUDE --expand + --cert-name TO SUPPORT DOMAIN EXPANSION !!!
@@ -2431,6 +2608,15 @@ get_main_domain() {
 #       Install packages → Stop nginx early → Handle email & domains independently
 #       → Apply certificates (standalone) → ONLY THEN setup full Nginx configuration
 #
+# Recent Improvement (April 2026 - Idempotency Enhancement):
+#   • Strengthened early check: now verifies both `command -v nginx` AND that
+#     the binary is executable (`[ -x "$(command -v nginx)" ]`).
+#   • If nginx already exists, the function returns immediately with clear
+#     status message (supports --json and normal mode).
+#   • This prevents redundant package manager operations on repeated runs
+#     while keeping the function fully idempotent and safe for automation.
+#   • Improves Caution without touching any protected installation sequence.
+#
 # Platform Support Strategy (2026):
 #   1. Linux:
 #      • Debian/Ubuntu family          → apt-get
@@ -2455,7 +2641,7 @@ get_main_domain() {
 #   • Run package manager update where appropriate.
 #   • All output goes through central `info()` / `warn()` / `die()` functions.
 #   • Fail with clear, actionable messages for unsupported or problematic environments.
-#   • No configuration files touched here — that happens only in setup_nginx_configs().
+#   • No configuration files touched here — that happens only in deploy_domain_nginx_configs().
 #
 # Important Notes:
 #   • After installation on most Linux distros, nginx service is enabled and started.
@@ -2466,13 +2652,17 @@ get_main_domain() {
 #
 # !!! THIS FUNCTION MUST REMAIN EARLY IN run_interactive_setup() !!!
 # !!! DO NOT ADD ANY CONFIGURATION, START, OR ENABLE COMMANDS HERE !!!
-# !!! DO NOT COMBINE WITH setup_nginx_configs() !!!
+# !!! DO NOT COMBINE WITH deploy_domain_nginx_configs() !!!
 # !!! THE OFFICIAL PACKAGE OFTEN STARTS NGINX — WE STOP IT RIGHT AFTER !!!
 # =============================================================================
 
 install_nginx() {
-    if command -v nginx >/dev/null 2>&1; then
-        info "nginx is already installed."
+    if command -v nginx >/dev/null 2>&1 && [ -x "$(command -v nginx)" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "status" "nginx already installed" "path" "$(command -v nginx)"
+        else
+            info "nginx is already installed."
+        fi
         return 0
     fi
 
@@ -2560,7 +2750,7 @@ install_nginx() {
 #   (the default nginx user on Debian/Ubuntu and most Linux distros).
 #
 #   This prevents permission issues when serving static files.
-#   Runs after setup_nginx_configs() so all directories and files exist.
+#   Runs after deploy_domain_nginx_configs() so all directories and files exist.
 #
 # Defensive:
 #   - Only runs as root
@@ -2578,46 +2768,33 @@ fix_docroot_permissions() {
     info "Fixing permissions: setting www-data:www-data ownership on document roots..."
 
     # Main docroots for all domains
-    if [ -d "/var/www" ]; then
-        chown -R www-data:www-data /var/www 2>/dev/null || true
+    if [ -d "${NGINX_DOCROOT_BASE}" ]; then
+        chown -R www-data:www-data ${NGINX_DOCROOT_BASE} 2>/dev/null || true
     fi
 
     # ACME challenge directory (used for renewals)
-    if [ -d "/var/www/letsencrypt" ]; then
-        chown -R www-data:www-data /var/www/letsencrypt 2>/dev/null || true
+    if [ -d "${NGINX_DOCROOT_BASE}/letsencrypt" ]; then
+        chown -R www-data:www-data ${NGINX_DOCROOT_BASE}/letsencrypt 2>/dev/null || true
     fi
 
     # Ensure directories are readable/executable and files are readable
-    find /var/www -type d -exec chmod 755 {} + 2>/dev/null || true
-    find /var/www -type f -exec chmod 644 {} + 2>/dev/null || true
+    find ${NGINX_DOCROOT_BASE} -type d -exec chmod 755 {} + 2>/dev/null || true
+    find ${NGINX_DOCROOT_BASE} -type f -exec chmod 644 {} + 2>/dev/null || true
 
     success "Document root permissions fixed (www-data:www-data)"
 }
 
 # =============================================================================
-# setup_nginx_configs() - Final Nginx Configuration (After Certificates)
+# create_cloudflare_map() - Create Cloudflare IP detection map (global, one-time)
 # =============================================================================
 #
-# CRITICAL FUNCTION - STRICT SEQUENCE ENFORCEMENT
-#
 # Purpose:
-#   This function is called ONLY AFTER certificates have been successfully
-#   obtained via Certbot --standalone (with nginx stopped).
+#   Creates the cloudflare-map.conf file and ensures it is included in nginx.conf.
+#   This is a global (http context) configuration, not per-domain.
 #
-#   It sets up a secure, production-ready Nginx configuration with:
-#     • HTTP → HTTPS redirect + ACME challenge support
-#     • Per-domain HTTPS server blocks using the SINGLE certificate
-#       (main_domain as primary CN + all other domains as SANs)
-#     • Strong Cloudflare-only origin protection (deny all other direct access)
-#     • Proper real_ip handling so $remote_addr reflects the real visitor IP
-#
-# Security Model (Defensive Design):
-#   • Only Cloudflare IPs are allowed to reach the server on port 443.
-#   • Direct access from anywhere else is blocked (deny all;).
-#   • This protects the origin server when placed behind Cloudflare Proxy (orange cloud).
-#   • real_ip_recursive on + CF-Connecting-IP header gives correct client IP
-#     to logs and any backend applications (e.g. GitLab, custom apps).
-#   • SSL configuration is modern and secure (TLSv1.2 + TLSv1.3).
+# Why separate function?
+#   Cloudflare map is independent from per-domain server blocks.
+#   Makes intention clear and allows easier future maintenance.
 #
 # Why Cloudflare IP Restriction?
 #   When using Cloudflare, all visitor traffic arrives from Cloudflare's anycast network.
@@ -2644,63 +2821,15 @@ fix_docroot_permissions() {
 #   • nginx cannot check $remote_ip against ip map well, fall back to 
 #     weak $http_cf_connecting_ip header at this stage.
 #
-# Certificate Usage:
-#   All domains (main + SANs) share ONE certificate located at:
-#       /etc/letsencrypt/live/${main_domain}/
-#   This is by design — one cert covers the entire list.
-#
-# =============================================================================
-# CRITICAL WARNING - $is_cf IMPLEMENTATION (REAL SERVER TESTED)
-# =============================================================================
-#
-# Problems discovered through real server testing:
-#   • Using `geo $remote_addr $is_cf { ... }`                → buggy / unreliable
-#   • Using `map $realip_remote_addr $is_cf { ... }`        → buggy / unreliable
-#   • Any map/geo that depends on variables after real_ip module runs → often fails
-#
-# Working solution (verified on real server):
-#   1. Capture original connecting IP very early:
-#        map $remote_addr $origin_addr { default $remote_addr; }
-#   2. Then inside server block:
-#        set $is_cf 0;
-#        if ($remote_addr != $origin_addr) {
-#            set $is_cf 1;
-#        }
-#
-# This method is currently the only reliable way found in real environment.
-#
-# !!! DO NOT START NGINX EARLIER !!!
-# !!! THIS FUNCTION MUST RUN AFTER apply_letsencrypt_standalone() !!!
-# !!! DO NOT MODIFY THE CORE STRUCTURE OR SECURITY MODEL !!!
+# !!! CALLED ONLY ONCE FROM deploy_domain_nginx_configs() !!!
 # =============================================================================
 
-setup_nginx_configs() {
-    local domains="$1"
-    local main_domain="$2"
-    local cert_path="/etc/letsencrypt/live/${main_domain}"
-    local CLOUDFLARE_MAP_FILE="/etc/nginx/sites-available/cloudflare-map.conf"
+create_cloudflare_map() {
+    local CLOUDFLARE_MAP_FILE="${NGINX_CONF_ROOT}/sites-available/cloudflare-map.conf"
 
-    [ -z "$domains" ]     && die "No domains provided to setup_nginx_configs()"
-    [ -z "$main_domain" ] && die "No main domain provided to setup_nginx_configs()"
-
-    info "Setting up final Nginx configuration (after certificates)..."
-
-    # =============================================================================
-    # 1. Backup nginx.conf
-    # =============================================================================
-    local backup_date
-    backup_date=$(date +%Y%m%d)
-
-    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-    mkdir -p /var/www
-    chmod 755 /var/www
-
-    # =============================================================================
-    # 2. Cloudflare Map (http context)
-    # =============================================================================
     info "Creating Cloudflare IP detection map..."
 
-    cat > ${CLOUDFLARE_MAP_FILE} << 'EOF'
+    cat > "${CLOUDFLARE_MAP_FILE}" << 'EOF'
 # =============================================================================
 # Simple and Reliable $has_cf variable
 # =============================================================================
@@ -2741,34 +2870,91 @@ set_real_ip_from 2c0f:f248::/32;
 
 EOF
 
-    chmod 644 ${CLOUDFLARE_MAP_FILE}
-    ln -s ${CLOUDFLARE_MAP_FILE} /etc/nginx/sites-enabled/
-    if ! grep -q "cloudflare-map.conf" /etc/nginx/nginx.conf; then
-        sed -i "/http[[:space:]]*{/a \    include ${CLOUDFLARE_MAP_FILE};" /etc/nginx/nginx.conf
+    chmod 644 "${CLOUDFLARE_MAP_FILE}"
+    ln -sf "${CLOUDFLARE_MAP_FILE}" ${NGINX_CONF_ROOT}/sites-enabled/
+
+    if ! grep -q "cloudflare-map.conf" ${NGINX_CONF_ROOT}/nginx.conf; then
+        sed -i "/http[[:space:]]*{/a \    include ${CLOUDFLARE_MAP_FILE};" ${NGINX_CONF_ROOT}/nginx.conf
     fi
+}
 
-    # =============================================================================
-    # 3. Per-Domain Configs
-    # =============================================================================
+# =============================================================================
+# create_per_domain_server_blocks() - Create per-domain HTTPS configs
+# =============================================================================
+#
+# Purpose:
+#   Creates one server block per domain in sites-available/ and symlinks to sites-enabled/.
+#   Includes document root, index.html, SSL, Cloudflare protection, etc.
+#
+# Why separate?
+#   This is the domain-specific part. Clear separation improves readability
+#   and maintainability without touching protected core logic.
+#
+#   It sets up a secure, production-ready Nginx configuration with:
+#     • HTTP → HTTPS redirect + ACME challenge support
+#     • Per-domain HTTPS server blocks using the SINGLE certificate
+#       (main_domain as primary CN + all other domains as SANs)
+#     • Strong Cloudflare-only origin protection (deny all other direct access)
+#     • Proper real_ip handling so $remote_addr reflects the real visitor IP
+#
+# Security Model (Defensive Design):
+#   • Only Cloudflare IPs are allowed to reach the server on port 443.
+#   • Direct access from anywhere else is blocked (deny all;).
+#   • This protects the origin server when placed behind Cloudflare Proxy (orange cloud).
+#   • real_ip_recursive on + CF-Connecting-IP header gives correct client IP
+#     to logs and any backend applications (e.g. GitLab, custom apps).
+#   • SSL configuration is modern and secure (TLSv1.2 + TLSv1.3).
+#
+# Certificate Usage:
+#   All domains (main + SANs) share ONE certificate located at:
+#       /etc/letsencrypt/live/${main_domain}/
+#   This is by design — one cert covers the entire list.
+#
+# =============================================================================
+# CRITICAL WARNING - $is_cf IMPLEMENTATION (REAL SERVER TESTED)
+# =============================================================================
+#
+# Problems discovered through real server testing:
+#   • Using `geo $remote_addr $is_cf { ... }`                → buggy / unreliable
+#   • Using `map $realip_remote_addr $is_cf { ... }`        → buggy / unreliable
+#   • Any map/geo that depends on variables after real_ip module runs → often fails
+#
+# Working solution (verified on real server):
+#   1. Capture original connecting IP very early:
+#        map $remote_addr $origin_addr { default $remote_addr; }
+#   2. Then inside server block:
+#        set $is_cf 0;
+#        if ($remote_addr != $origin_addr) {
+#            set $is_cf 1;
+#        }
+#
+# !!! CALLED FROM deploy_domain_nginx_configs() !!!
+# =============================================================================
+
+create_per_domain_server_blocks() {
+    local domains="$1"
+    local main_domain="$2"
+    local cert_path="/etc/letsencrypt/live/${main_domain}"
+
     for domain in $domains; do
-        mkdir -p "/var/www/${domain}"
-        chmod 755 "/var/www/${domain}"
+        mkdir -p "${NGINX_DOCROOT_BASE}/${domain}"
+        chmod 755 "${NGINX_DOCROOT_BASE}/${domain}"
 
-        cat > "/var/www/${domain}/index.html" << EOF
+        cat > "${NGINX_DOCROOT_BASE}/${domain}/index.html" << EOF
 <!DOCTYPE html><html><head><title>${domain}</title></head><body style="font-family:Arial;text-align:center;padding:100px;">
 <h1>${domain}</h1><p>Protected by Cloudflare + Nginx</p></body></html>
 EOF
 
-        cat > "/etc/nginx/sites-available/${domain}.conf" << EOF
+        cat > "${NGINX_CONF_ROOT}/sites-available/${domain}.conf" << EOF
 
-include ${CLOUDFLARE_MAP_FILE};
+include ${NGINX_CONF_ROOT}/sites-available/cloudflare-map.conf;
 
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name ${domain};
 
-    root /var/www/${domain};
+    root ${NGINX_DOCROOT_BASE}/${domain};
     index index.html;
 
     ssl_certificate ${cert_path}/fullchain.pem;
@@ -2777,11 +2963,13 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers off;
+
     # This must be inside server block
     set \$is_cf 0;
     if (\$remote_addr != \$origin_addr) {
         set \$is_cf 1;
     }
+
     # ====================== CLOUD FLARE CHECK PAGE ======================
     location = /cloudflare-check {
         default_type text/html;
@@ -2794,11 +2982,7 @@ server {
     <p style="font-size:2.8em;color:#0066cc;font-weight:bold;">\$remote_addr</p>
     <p><strong>From Cloudflare?</strong> \$is_cf (1 = Yes)</p>
     <p><strong>CF Connecting IP:</strong> \$http_cf_connecting_ip</p>
-    <p><strong>Is Cloudflare (weak test, judge by http_cf_connecting_ip</strong> 
-        <span style="color: #0066cc; font-weight:bold;">
-            \$has_cf
-        </span>
-    </p>
+    <p><strong>Is Cloudflare:</strong> <span style="color: #0066cc; font-weight:bold;">\$has_cf</span></p>
     <p><strong>Ray ID:</strong> \$http_cf_ray</p>
     <hr>
     <p style="color:green;">This page is open to everyone (bypassing protection)</p>
@@ -2815,16 +2999,60 @@ server {
     }
 
     location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
+        root ${NGINX_DOCROOT_BASE}/letsencrypt;
         try_files \$uri =404;
     }
 }
 EOF
 
-        ln -sf "/etc/nginx/sites-available/${domain}.conf" /etc/nginx/sites-enabled/
+        ln -sf "${NGINX_CONF_ROOT}/sites-available/${domain}.conf" ${NGINX_CONF_ROOT}/sites-enabled/
     done
+}
 
+# =============================================================================
+# deploy_domain_nginx_configs() - Final Nginx Configuration (After Certificates)
+# =============================================================================
+#
+# CRITICAL FUNCTION - STRICT SEQUENCE ENFORCEMENT
+#
+# Purpose:
+#   Creates and deploys the final nginx virtual host configuration for each domain
+#   (after certificates are obtained).
+#
+#   High-level orchestrator called after certificates are obtained.
+#   Coordinates the 4 distinct steps without doing the heavy work itself.
+#
+#   This includes:
+#   • Cloudflare IP detection map (once)
+#   • Per-domain HTTPS server blocks (with redirect, ACME support, etc.)
+#   • Document root + index.html creation
+#   • nginx-adm ownership
+#
+# Why this name?
+#   Previous name `setup_nginx_configs` was too broad and vague.
+#   New name clearly communicates the **intent**: deploying domain-specific
+#   configs after the certificate stage.
+#
+# This method is currently the only reliable way found in real environment.
+#
+# !!! DO NOT START NGINX EARLIER !!!
+# !!! THIS FUNCTION MUST RUN AFTER apply_letsencrypt_standalone() !!!
+# !!! DO NOT MODIFY THE CORE STRUCTURE OR SECURITY MODEL !!!
+# =============================================================================
+
+deploy_domain_nginx_configs() {
+    local domains="$1"
+    local main_domain="$2"
+
+    [ -z "$domains" ]     && die "No domains provided to deploy_domain_nginx_configs()"
+    [ -z "$main_domain" ] && die "No main domain provided to deploy_domain_nginx_configs()"
+
+    info "Deploying final Nginx configuration (after certificates)..."
+
+    create_cloudflare_map
+    create_per_domain_server_blocks "$domains" "$main_domain"
     setup_nginx_adm_ownership
+    fix_docroot_permissions   # if you want to keep it here
 
     info "Nginx configuration completed successfully."
     info "→ Debug page is now available at: https://${main_domain}/cloudflare-check"
@@ -2853,7 +3081,7 @@ EOF
 #
 # New in 1.9.0:
 #   • Calls nginx-adm setup functions early
-#   • Calls backup_existing_nginx_configs() before any configuration changes
+#   • Calls backup_nginx_sites_configs() before any configuration changes
 #   • Uses nginx-adm for ownership and testing (least privilege)
 #
 # New Feature (April 2026):
@@ -2893,7 +3121,7 @@ run_interactive_setup() {
     setup_restricted_sudoers
 
     # === 1.9.0: Backup before any config changes ===
-    backup_existing_nginx_configs
+    backup_nginx_sites_configs
 
     # Step 1-2: Install packages (no config)
     install_certbot
@@ -2965,7 +3193,7 @@ run_interactive_setup() {
     apply_letsencrypt_standalone "$domains" "$email" "$main_domain"
 
     # Step 6: Setup final Nginx configuration
-    setup_nginx_configs "$domains" "$main_domain"
+    deploy_domain_nginx_configs "$domains" "$main_domain"
 
     # Step 7: Test and start nginx (as nginx-adm)
     info "Testing nginx configuration..."
@@ -3027,7 +3255,7 @@ run_non_interactive_setup() {
     setup_restricted_sudoers
 
     # === 1.9.0: Backup existing configs before any potential changes ===
-    backup_existing_nginx_configs
+    backup_nginx_sites_configs
 
     # Step 1-2: Install packages (no configuration)
     install_certbot
@@ -3100,7 +3328,6 @@ ensure_letsencrypt_structure() {
     fi
 }
 
-
 # =============================================================================
 # create_nginx_adm_user() - Create dedicated least-privilege user (NEW 1.9.0)
 # =============================================================================
@@ -3110,6 +3337,13 @@ ensure_letsencrypt_structure() {
 # Purpose:
 #   Creates the "nginx-adm" user if it does not exist.
 #   This user will own all nginx configuration and will be used for day-to-day operations.
+#
+# Recent Improvement (April 2026 - Idempotency Enhancement):
+#   • Added explicit early exit: if `nginx-adm` user already exists (`id "nginx-adm"`),
+#     the function now returns immediately with a clear status message.
+#   • This prevents unnecessary groupadd/useradd calls and reduces log noise on
+#     repeated runs or when re-running the script after partial setup.
+#   • Maintains full least-privilege model while making the function truly idempotent.
 #
 # Rules:
 #   • User is a normal (non-root) system user.
@@ -3123,8 +3357,17 @@ ensure_letsencrypt_structure() {
 # =============================================================================
 
 create_nginx_adm_user() {
-    info "Setting up nginx-adm user (UID/GID 1999)..."
+    # Early exit if user already exists - respects idempotency
+    if id "nginx-adm" >/dev/null 2>&1; then
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "status" "nginx-adm user already exists" "uid" "1999"
+        else
+            info "nginx-adm user already exists (UID/GID 1999)."
+        fi
+        return 0
+    fi
 
+    info "Creating nginx-adm user (UID/GID 1999)..."
     # Create group with fixed GID if it doesn't exist
     if ! getent group nginx-adm >/dev/null 2>&1; then
         groupadd -g 1999 nginx-adm 2>/dev/null || true
@@ -3146,7 +3389,7 @@ create_nginx_adm_user() {
     chown nginx-adm:nginx-adm /etc/nginx-adm 2>/dev/null || true
     chmod 755 /etc/nginx-adm 2>/dev/null || true
 
-    info "nginx-adm user (UID/GID 1999) configured with home /etc/nginx-adm."
+    success "nginx-adm user (UID/GID 1999) created with home /etc/nginx-adm."
 }
 
 # =============================================================================
@@ -3157,20 +3400,20 @@ create_nginx_adm_user() {
 #
 # Purpose:
 #   Ensures nginx-adm owns the configuration and sets up correct symlinks:
-#     /etc/nginx/sites-available  → symlink to /etc/nginx-adm/sites-available
-#     /etc/nginx/sites-enabled    → symlink to /etc/nginx-adm/sites-enabled
+#     ${NGINX_CONF_ROOT}/sites-available  → symlink to ${NGINX_CONF_ROOT}-adm/sites-available
+#     ${NGINX_CONF_ROOT}/sites-enabled    → symlink to ${NGINX_CONF_ROOT}-adm/sites-enabled
 #
 # Important Rules:
 #   • Does NOT recreate user (only ownership and symlinks)
-#   • Real directories live under /etc/nginx/ (never delete them)
+#   • Real directories live under ${NGINX_CONF_ROOT}/ (never delete them)
 #   • Only create symlinks in /etc/nginx-adm/ if they don't exist or are broken
 #   • Preserves existing files in /etc/nginx-adm when user is recreated
 #   • Never need to create /etc/nginx-adm (which is the home directory of user: nginx-adm)
-#   • Correct symlink direction: /etc/nginx/sites-* → /etc/nginx-adm/sites-*
+#   • Correct symlink direction: ${NGINX_CONF_ROOT}/sites-* → /etc/nginx-adm/sites-*
 #   • Never rm -rf real config directories
 #   • Ownership: nginx-adm:root (as per your test)
 #   • Permissions: 775 for practical group access
-#   • not working in /bin/sh mkdir -p /etc/nginx/{sites-available,sites-enabled}
+#   • not working in /bin/sh mkdir -p ${NGINX_CONF_ROOT}/{sites-available,sites-enabled}
 #
 # !!! MUST BE CALLED AFTER create_nginx_adm_user() !!!
 # =============================================================================
@@ -3180,17 +3423,17 @@ setup_nginx_adm_ownership() {
 
     # 1. Ensure real directories exist under nginx (never delete content)
     # Under /bin/sh, the following is not working, you should do it one by one
-    # mkdir -p /etc/nginx/{sites-available,sites-enabled}
-    mkdir -p /etc/nginx/sites-available
-    mkdir -p /etc/nginx/sites-enabled
+    # mkdir -p ${NGINX_CONF_ROOT}/{sites-available,sites-enabled}
+    mkdir -p ${NGINX_CONF_ROOT}/sites-available
+    mkdir -p ${NGINX_CONF_ROOT}/sites-enabled
 
 
     # 3. Transfer ownership
-    chown -R nginx-adm:root /etc/nginx 2>/dev/null || true
+    chown -R nginx-adm:root ${NGINX_CONF_ROOT} 2>/dev/null || true
 
-    # 4. Create symlinks in /etc/nginx/ pointing to /etc/nginx-adm/ (correct direction)
+    # 4. Create symlinks in ${NGINX_CONF_ROOT}/ pointing to /etc/nginx-adm/ (correct direction)
     for dir in sites-available sites-enabled; do
-        local source="/etc/nginx/${dir}"
+        local source="${NGINX_CONF_ROOT}/${dir}"
         local target="/etc/nginx-adm/${dir}"
 
         # If the target is NOT already a symlink to the correct location, fix it
@@ -3214,7 +3457,7 @@ setup_nginx_adm_ownership() {
     done
 
     # 5. Set permissions
-    chmod 775 /etc/nginx 2>/dev/null || true
+    chmod 775 ${NGINX_CONF_ROOT} 2>/dev/null || true
     chmod 775 /etc/nginx-adm/sites-available 2>/dev/null || true
     chmod 775 /etc/nginx-adm/sites-enabled 2>/dev/null || true
 
@@ -3302,7 +3545,7 @@ EOF
 }
 
 # =============================================================================
-# backup_existing_nginx_configs() - Dated backup with special default.conf handling (NEW 1.9.0)
+# backup_nginx_sites_configs() - Dated backup with special default.conf handling (NEW 1.9.0)
 # =============================================================================
 #
 # CRITICAL FUNCTION - PART OF BACKUP POLICY
@@ -3311,10 +3554,17 @@ EOF
 #   Creates dated backups before modifying nginx configs.
 #   Special rule: default.conf is backed up then removed (prevents accumulation on repeated runs).
 #
+#   Does NOT backup the main nginx.conf (that is handled separately when we
+#   modify it once for sites-enabled support).
+#
+# Why this name?
+#   Previous name `backup_existing_nginx_configs` was blurry — it suggested
+#   it backs up everything. This new name makes intention explicit and accurate.
+#
 # Backup format: <filename>.YYYYMMDD-N.bak   (N = daily counter starting at 1)
 #
 # Rules:
-#   • Backs up files in /etc/nginx/sites-available/
+#   • Backs up files in ${NGINX_CONF_ROOT}/sites-available/
 #   • For default.conf (or default site files): backup then delete original
 #   • Other files: backup only (keep original)
 #   • Idempotent and defensive
@@ -3322,8 +3572,8 @@ EOF
 # !!! MUST BE CALLED BEFORE ANY CONFIG CREATION OR REMOVAL !!!
 # =============================================================================
 
-backup_existing_nginx_configs() {
-    local sites_dir="/etc/nginx/sites-available"
+backup_nginx_sites_configs() {
+    local sites_dir="${NGINX_CONF_ROOT}/sites-available"
     local today
     today=$(date +%Y%m%d)
 
@@ -3529,7 +3779,7 @@ main_certbot_nginx_app() {
             ;;
 
         about)
-            show_about_global
+            show_system_diagnostics
             exit 0
             ;;
 
@@ -3558,8 +3808,8 @@ main_certbot_nginx_app() {
             [ -z "$main_domain" ] && die "Could not determine main domain."
 
             # 1.9.0: Backup before regenerating configs
-            backup_existing_nginx_configs
-            setup_nginx_configs "$domains" "$main_domain"
+            backup_nginx_sites_configs
+            deploy_domain_nginx_configs "$domains" "$main_domain"
             info "✅ Nginx configs regenerated using main domain: ${main_domain}"
             exit 0
             ;;
