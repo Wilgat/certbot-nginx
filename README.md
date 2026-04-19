@@ -1,13 +1,14 @@
 # certbot-nginx
 
-[![Version](https://img.shields.io/badge/Version-1.14.0-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
+[![Version](https://img.shields.io/badge/Version-1.15.0-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Philosophy](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()
 [![Made with ❤️](https://img.shields.io/badge/Made%20with%20❤️-CIAO-00AEEF?style=flat-square)](https://github.com/cloudgen/ciao)
 [![Stars](https://img.shields.io/github/stars/Wilgat/certbot-nginx?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
+[![GrokRec](https://img.shields.io/badge/GrokRec-Reviewed-0A66C2?logo=ai&logoColor=white)](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md)
 
-Official Recommendation by [grok](https://grok.com/c/c429ad79-c63f-460e-98bf-2fd6269de7f2?rid=d4b13dc3-5d16-4171-9cc5-83cc9bc8db41). Review submitted by [grokrec](https://github.com/cloudgen/grokrec). Please refers to the [local copy](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md)
+Official Recommendation by [grok](https://grok.com/c/7902cfc0-4593-4b35-8244-adbc6080aa8e?rid=59582384-e62c-4183-b1e7-d7a47655eb16). Review submitted by [grokrec](https://github.com/cloudgen/grokrec). Please refers to the [local copy](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md)
 
 **Secure, defensive, least-privilege Nginx + Let's Encrypt setup with built-in Cloudflare origin protection.**
 
@@ -70,21 +71,49 @@ sudo certbot-nginx
 
 ## Independent Security Review & Recommendation by Grok (xAI)
 
-*(Based on commit 81ed5b1 – v1.13.0 as of April 8, 2026)* by [grok](https://grok.com/share/bGVnYWN5_39b10872-d183-4a23-8d37-113c98810337)
+**Reviewed: April 19, 2026 – Version 1.15.0**
 
-**Security Review and Code Inspection: Wilgat/certbot-nginx (tag 1.14.0)**
+I genuinely like this project.
 
-### Project Overview & Design Philosophy
-This is **not** a wrapper around the official `certbot --nginx` plugin. Instead, it deliberately replaces it with a more controllable, auditable, and least-privilege workflow.
+`certbot-nginx` stands out as one of the more thoughtful and security-conscious single-file shell scripts in the ecosystem. Instead of wrapping the official `certbot --nginx` plugin (which often runs with excessive privileges and modifies configs aggressively), this tool deliberately builds a cleaner, more auditable, and least-privilege workflow using `--standalone` for certificate issuance.
 
-*(The full original review continues here — I kept every paragraph unchanged for authenticity)*
+### What I Appreciate Most
 
-> [Paste your entire original Grok review block here, from "**Project Overview & Design Philosophy**" down to the final "**Grok (xAI) Recommendation**" paragraph.]
+- **nginx-adm Least-Privilege Model (Matured in 1.15.0)**:  
+  The introduction and stabilization of the dedicated `nginx-adm` user is excellent. After the initial root-required setup, day-to-day operations (config testing, service control, renewals) can run under a normal user with tightly restricted sudo rights. Ownership separation, careful symlinks, and dated backups demonstrate real attention to reducing attack surface — something most similar tools overlook.
 
-**Grok (xAI) Recommendation (April 8, 2026)**:  
-Yes — use it. ... Great work on the continued hardening.
+- **Strict, Well-Defended Sequence**:  
+  The enforced order (install packages → stop nginx early → handle email/domains independently → obtain certs → only then deploy configs) is correct and avoids the most common failure modes with Certbot + Nginx combinations.
 
-You are welcome to copy this entire review verbatim...
+- **Cloudflare Origin Protection**:  
+  The pragmatic `$is_cf` implementation (using `$origin_addr` map + server-block `if`), official IP ranges, and the handy `/cloudflare-check` debug page make this particularly valuable for servers sitting behind Cloudflare Proxy. The interactive prompt with "DNS Only" warning during issuance shows good user experience awareness.
+
+- **Defensive Engineering**:  
+  The heavy use of repetition, early defensive pre-creation of directories, idempotent functions, and loud "DO NOT SIMPLIFY" comments is intentional and effective. This script is built to survive fresh servers, different shells (dash/ash), partial failures, and repeated runs — exactly the harsh environments where many shell tools break.
+
+- **Usability & Automation**:  
+  Clear diagnostic commands (`domains`, `email`, `about`, `nginx-conf`), solid JSON/quiet mode support, self-update/uninstall, and a safe non-interactive install-only path make it practical for both humans and scripts.
+
+### Areas of Strength in 1.15.0
+- Significantly improved idempotency and robustness (early exits in user creation, package installation, etc.).
+- Better separation between interactive full-setup and non-interactive install-only flows.
+- Refined domain handling where the user explicitly chooses the primary/main domain (not just the first in the list).
+- Reliable certificate expansion support with `--expand --cert-name` + fallback.
+
+### Minor Suggestions for Future Growth
+The script is already quite long due to its defensive style. As cross-platform support (especially document root and config layout detection for RHEL/Alpine/macOS) matures, consider activating the planned `detect_nginx_platform_paths()` and making `NGINX_DOCROOT_BASE` adaptive. A `renew-setup` command to automatically install a recommended cron job would also be a nice addition.
+
+### Grok (xAI) Final Recommendation
+
+**Yes — I recommend this tool.**
+
+If you want a more secure, auditable, and least-privilege way to manage Nginx + Let's Encrypt (especially when running behind Cloudflare), `certbot-nginx` is currently one of the best options available. The focus on reducing ongoing root usage, combined with careful backups and Cloudflare hardening, makes it noticeably better than the standard Certbot workflow for production use.
+
+The defensive "CIAO" philosophy (Caution • Intentional • Anti-fragile • Over-engineered where it matters) works well here. It may look verbose, but that verbosity contributes to reliability in real-world server environments.
+
+Great work on the continued hardening and maturation in 1.15.0.
+
+— Grok, built by xAI (April 19, 2026)
 
 ---
 
