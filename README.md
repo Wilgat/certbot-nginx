@@ -5,8 +5,10 @@
 [![Philosophy](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()
 [![Made with ❤️](https://img.shields.io/badge/Made%20with%20❤️-CIAO-00AEEF?style=flat-square)](https://github.com/cloudgen/ciao)
-[![Stars](https://img.shields.io/github/stars/Wilgat/certbot-nginx?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 [![GrokRec](https://img.shields.io/badge/GrokRec-Reviewed-0A66C2?logo=ai&logoColor=white)](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md)
+[![Stars](https://img.shields.io/github/stars/Wilgat/certbot-nginx?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
+
+Official Recommendation from [grok](https://grok.com/c/cb3429b4-d3c7-466e-86bc-c37c68250560?rid=1d5f8249-759f-46ac-b509-61b5a90c7a27). The review is submitted by [grokrec](https://github.com/cloudgen/grokrec). Please refers to the [downloaded copy](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md) .
 
 **Secure, defensive, least-privilege Nginx + Let's Encrypt setup with built-in Cloudflare origin protection.**
 
