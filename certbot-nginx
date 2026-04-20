@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.15.0
+# certbot-nginx – version 1.16.0
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -322,7 +322,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.15.0"
+VERSION="1.16.0"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -895,7 +895,7 @@ version_check() {
 }
 
 # =============================================================================
-# self_update() - Perform self-update to latest version
+# self_update_v2() - Perform self-update to latest version
 # =============================================================================
 #
 # GENERAL PURPOSE:
@@ -906,7 +906,7 @@ version_check() {
 # Designed to be reusable in other projects.
 # =============================================================================
 
-self_update() {
+self_update_v2() {
     if [ "${JSON}" -eq 0 ]; then
         info "Starting self-update of ${APP_NAME}..."
     fi
@@ -940,7 +940,7 @@ self_update() {
     fi
 
     FORCE_REINSTALL=1
-    perform_self_install
+    perform_self_install_v2
 }
 
 # =============================================================================
@@ -1150,21 +1150,57 @@ add_to_shell_path() {
 }
 
 # =============================================================================
-# perform_self_install() - Main self-installation logic
+# SELF-INSTALL LOGIC (root-only) - UPDATED TO v2 (April 2026)
 # =============================================================================
 #
-# GENERAL PURPOSE:
-# Downloads and installs the script to the correct location (global or user-local).
+# CRITICAL DEFENSIVE FUNCTION - DO NOT SIMPLIFY, REMOVE, OR REFACTOR
 #
-# Please don't modify this code for root-only installed
-# You can check [ "$(id -u)" -eq 0 ] before calling / executing 
-#   this function
+# New in v2 (perform_self_install_v2):
+#   1. If environment variable CHECKSUM=<sha256> is set (e.g. exported by user or CI),
+#      the script will:
+#        • Download the script from ${SCRIPT_URL}
+#        • Verify the downloaded content against the provided CHECKSUM using sha256sum
+#        • Only proceed with installation if the checksum matches exactly
+#        • This allows users/CI to pin a known-good version and protect against
+#          MITM, compromised GitHub raw, or network tampering.
 #
-# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
-# Designed to be reusable in other projects.
+#   2. If CHECKSUM is NOT set (normal interactive/one-liner usage):
+#        • First attempt: curl ${SCRIPT_URL} (the script itself)
+#        • Second attempt: also fetch ${SCRIPT_URL}.sha256 (if HTTP 200)
+#        • If the .sha256 file exists and is valid, verify the downloaded script
+#          with "sha256sum -c"
+#        • If verification fails → die with clear error (incorrect checksum)
+#        • If no .sha256 file or verification skipped → proceed (backward compatible)
+#
+# Why this v2 protection is needed (Defensive Reasoning):
+#   • The classic `curl | sh` pattern is convenient but inherently risky.
+#   • GitHub raw content can be tampered with via account compromise, supply-chain attack,
+#     or transient network interception.
+#   • Providing both an explicit CHECKSUM env var and automatic .sha256 lookup
+#     significantly reduces the attack surface for one-command installs.
+#   • Maintains full backward compatibility for users who do not provide CHECKSUM.
+#   • Aligns with CIAO-Lite "Caution" and "Over-protect" principles.
+#   • Prevents silent installation of malicious code — fail loudly on checksum mismatch.
+#
+# Updated from previous version:
+#   • Old: perform_self_install() performed blind download + move.
+#   • New: perform_self_install_v2() adds layered checksum verification while keeping
+#     the rest of the installation logic (temp file, permissions, PATH handling) identical.
+#   • The function name was deliberately changed to perform_self_install_v2 to clearly
+#     signal the security upgrade. Old name is preserved in comments for reference.
+#   • All other self-update / self-uninstall logic continues to call the v2 version.
+#
+# !!! THIS IS THE SINGLE SOURCE OF TRUTH FOR SELF-INSTALLATION !!!
+# !!! DO NOT RENAME BACK, DO NOT MERGE WITH OTHER FUNCTIONS !!!
+# !!! ALWAYS CALL perform_self_install_v2() FOR NEW INSTALLS !!!
+# Shebang remains #!/bin/sh - defensive and portable.
+# Repeated safe defaults and heavy comments are intentional.
+#
+# Aligned with https://github.com/Wilgat/ciao
+# Last aligned: April 2026
 # =============================================================================
 
-perform_self_install() {
+perform_self_install_v2() {
     : "${GLOBAL_BIN:=/usr/local/bin}"
     : "${USER_BIN:=${HOME}/.local/bin}"
     : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
@@ -1229,36 +1265,162 @@ perform_self_install() {
         info "Downloading ${APP_NAME} from GitHub..."
     fi
 
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "${SCRIPT_URL}" -o "${tmp_file}" || {
-            rm -f "${tmp_file}"
-            if [ "${JSON}" -eq 1 ]; then
-                output_json_error "Download failed (curl)" "network_error"
-            else
-                error "Download failed (curl)"
-            fi
-            return 1
-        }
-    elif command -v wget >/dev/null 2>&1; then
-        wget -qO "${tmp_file}" "${SCRIPT_URL}" || {
-            rm -f "${tmp_file}"
-            if [ "${JSON}" -eq 1 ]; then
-                output_json_error "Download failed (wget)" "network_error"
-            else
-                error "Download failed (wget)"
-            fi
-            return 1
-        }
-    else
-        rm -f "${tmp_file}"
-        if [ "${JSON}" -eq 1 ]; then
-            output_json_error "Neither curl nor wget found" "missing_dependency"
-        else
-            error "Neither curl nor wget found"
+    # =============================================================================
+    # CHECKSUM VERIFICATION LAYER (v2 security upgrade)
+    # =============================================================================
+    local downloaded_checksum_ok=0
+
+    if [ -n "${CHECKSUM:-}" ]; then
+        # Explicit CHECKSUM provided by user/CI → strict verification
+        if [ "${JSON}" -eq 0 ]; then
+            info "Verifying download against provided CHECKSUM..."
         fi
-        return 1
+
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsSL "${SCRIPT_URL}" -o "${tmp_file}" || {
+                rm -f "${tmp_file}"
+                if [ "${JSON}" -eq 1 ]; then
+                    output_json_error "Download failed (curl)" "network_error"
+                else
+                    error "Download failed (curl)"
+                fi
+                return 1
+            }
+        elif command -v wget >/dev/null 2>&1; then
+            wget -qO "${tmp_file}" "${SCRIPT_URL}" || {
+                rm -f "${tmp_file}"
+                if [ "${JSON}" -eq 1 ]; then
+                    output_json_error "Download failed (wget)" "network_error"
+                else
+                    error "Download failed (wget)"
+                fi
+                return 1
+            }
+        else
+            rm -f "${tmp_file}"
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Neither curl nor wget found" "missing_dependency"
+            else
+                error "Neither curl nor wget found"
+            fi
+            return 1
+        fi
+
+        # Verify provided CHECKSUM
+        if printf '%s  %s\n' "${CHECKSUM}" "${tmp_file}" | sha256sum -c - >/dev/null 2>&1; then
+            downloaded_checksum_ok=1
+            if [ "${JSON}" -eq 0 ]; then
+                success "Checksum verification passed (user-provided CHECKSUM)."
+            fi
+        else
+            rm -f "${tmp_file}"
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Checksum verification failed (provided CHECKSUM does not match)" "checksum_mismatch"
+            else
+                die "Checksum verification failed. The downloaded file does not match the provided CHECKSUM. Installation aborted for security."
+            fi
+            return 1
+        fi
+
+    else
+        # No explicit CHECKSUM → try automatic .sha256 file (best-effort)
+        if [ "${JSON}" -eq 0 ]; then
+            info "No CHECKSUM provided → attempting automatic verification via ${SCRIPT_URL}.sha256"
+        fi
+
+        if command -v curl >/dev/null 2>&1; then
+            # Primary download
+            curl -fsSL "${SCRIPT_URL}" -o "${tmp_file}" || {
+                rm -f "${tmp_file}"
+                if [ "${JSON}" -eq 1 ]; then
+                    output_json_error "Download failed (curl)" "network_error"
+                else
+                    error "Download failed (curl)"
+                fi
+                return 1
+            }
+
+            # Try to fetch .sha256 sidecar
+            local sha_file
+            sha_file=$(mktemp -t "${APP_NAME}.sha256.XXXXXX") || {
+                rm -f "${tmp_file}"
+                return 1
+            }
+
+            if curl -fsSL -w "%{http_code}" "${SCRIPT_URL}.sha256" -o "${sha_file}" 2>/dev/null | grep -q "^200"; then
+                if sha256sum -c "${sha_file}" --status 2>/dev/null < "${tmp_file}"; then
+                    downloaded_checksum_ok=1
+                    if [ "${JSON}" -eq 0 ]; then
+                        success "Automatic checksum verification passed (${SCRIPT_URL}.sha256)."
+                    fi
+                else
+                    rm -f "${tmp_file}" "${sha_file}"
+                    if [ "${JSON}" -eq 1 ]; then
+                        output_json_error "Automatic checksum verification failed" "checksum_mismatch"
+                    else
+                        die "Checksum verification failed (mismatch with ${SCRIPT_URL}.sha256). Installation aborted for security."
+                    fi
+                    return 1
+                fi
+            else
+                # No .sha256 available → proceed without verification (backward compatible)
+                if [ "${JSON}" -eq 0 ]; then
+                    warn "No .sha256 file found at ${SCRIPT_URL}.sha256 → continuing without automatic verification."
+                fi
+            fi
+            rm -f "${sha_file}" 2>/dev/null || true
+
+        elif command -v wget >/dev/null 2>&1; then
+            # Similar logic for wget (kept minimal and defensive)
+            wget -qO "${tmp_file}" "${SCRIPT_URL}" || {
+                rm -f "${tmp_file}"
+                if [ "${JSON}" -eq 1 ]; then
+                    output_json_error "Download failed (wget)" "network_error"
+                else
+                    error "Download failed (wget)"
+                fi
+                return 1
+            }
+
+            local sha_file
+            sha_file=$(mktemp -t "${APP_NAME}.sha256.XXXXXX") || {
+                rm -f "${tmp_file}"
+                return 1
+            }
+
+            if wget -q --server-response "${SCRIPT_URL}.sha256" -O "${sha_file}" 2>&1 | grep -q "HTTP/1.1 200"; then
+                if sha256sum -c "${sha_file}" --status 2>/dev/null < "${tmp_file}"; then
+                    downloaded_checksum_ok=1
+                    if [ "${JSON}" -eq 0 ]; then
+                        success "Automatic checksum verification passed."
+                    fi
+                else
+                    rm -f "${tmp_file}" "${sha_file}"
+                    if [ "${JSON}" -eq 1 ]; then
+                        output_json_error "Automatic checksum verification failed" "checksum_mismatch"
+                    else
+                        die "Checksum verification failed. Installation aborted for security."
+                    fi
+                    return 1
+                fi
+            else
+                if [ "${JSON}" -eq 0 ]; then
+                    warn "No .sha256 file found → continuing without automatic verification."
+                fi
+            fi
+            rm -f "${sha_file}" 2>/dev/null || true
+        else
+            rm -f "${tmp_file}"
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Neither curl nor wget found" "missing_dependency"
+            else
+                error "Neither curl nor wget found"
+            fi
+            return 1
+        fi
     fi
 
+    # Final safety: if we reached here without explicit failure, file is in tmp_file
     chmod +x "${tmp_file}" 2>/dev/null || true
 
     rm -f "${INSTALL_PATH}" 2>/dev/null
@@ -1281,12 +1443,15 @@ perform_self_install() {
         output_json "success" "message" "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
     else
         success "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
+        if [ "${downloaded_checksum_ok}" -eq 1 ]; then
+            success "✓ Download was cryptographically verified."
+        fi
     fi
     return 0
 }
 
 # =============================================================================
-# maybe_install() - Friendly installation prompt
+# maybe_install_v2() - Friendly installation prompt
 # =============================================================================
 #
 # Respects both --quiet and --json modes.
@@ -1296,7 +1461,7 @@ perform_self_install() {
 # Designed to be reusable in other projects.
 # =============================================================================
 
-maybe_install() {
+maybe_install_v2() {
     if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
         return 0
     fi
@@ -1338,7 +1503,7 @@ maybe_install() {
     fi
 
     if [ "$should_install" = "true" ]; then
-        perform_self_install
+        perform_self_install_v2
         exit 0
     fi
 }
@@ -1364,7 +1529,7 @@ maybe_install() {
 #   • Loud intention comment to prevent future AI from removing it.
 #   • Can be called early in run_interactive_setup() when we expand support.
 #
-# Current Status (1.15.0):
+# Current Status (1.16.0):
 #   This function exists for planning and future-proofing only.
 #   It will be activated when we implement full multi-OS nginx.conf adaptation.
 #
@@ -3686,9 +3851,9 @@ main_certbot_nginx_app() {
     # =============================================================================
     if ! is_installed && [ $# -eq 0 ]; then
         if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
-            perform_self_install
+            perform_self_install_v2
         else
-            maybe_install
+            maybe_install_v2
         fi
     fi
 
@@ -3769,7 +3934,7 @@ main_certbot_nginx_app() {
             ;;
 
         self-update)
-            self_update
+            self_update_v2
             exit 0
             ;;
 
@@ -3779,7 +3944,7 @@ main_certbot_nginx_app() {
             ;;
 
         about)
-            show_system_diagnostics
+            show_nginx_system_diagnostics
             exit 0
             ;;
 

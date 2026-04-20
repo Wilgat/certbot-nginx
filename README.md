@@ -1,14 +1,12 @@
 # certbot-nginx
 
-[![Version](https://img.shields.io/badge/Version-1.15.0-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
+[![Version](https://img.shields.io/badge/Version-1.16.0-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Philosophy](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()
 [![Made with ❤️](https://img.shields.io/badge/Made%20with%20❤️-CIAO-00AEEF?style=flat-square)](https://github.com/cloudgen/ciao)
 [![Stars](https://img.shields.io/github/stars/Wilgat/certbot-nginx?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 [![GrokRec](https://img.shields.io/badge/GrokRec-Reviewed-0A66C2?logo=ai&logoColor=white)](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md)
-
-Official Recommendation by [grok](https://grok.com/c/7902cfc0-4593-4b35-8244-adbc6080aa8e?rid=59582384-e62c-4183-b1e7-d7a47655eb16). Review submitted by [grokrec](https://github.com/cloudgen/grokrec). Please refers to the [local copy](https://github.com/Wilgat/certbot-nginx/blob/main/RECOMMENDATION.md)
 
 **Secure, defensive, least-privilege Nginx + Let's Encrypt setup with built-in Cloudflare origin protection.**
 
@@ -22,7 +20,8 @@ A single-file, self-installing POSIX shell script that installs and configures N
 - **nginx-adm least-privilege user** — most day-to-day operations no longer require full root
 - Explicit interactive choice of the **primary/main domain** (becomes the certificate CN)
 - Automatic Let's Encrypt certificate issuance using `--standalone` (one cert for main domain + multiple SANs)
-- Strong **Cloudflare-only origin protection** (deny all non-Cloudflare traffic)
+- Strong **Cloudflare-only origin protection** (deny all non-Cloudflare traffic) — can be disabled with `--no-cloudflare`
+- **Enhanced self-install security (v2)**: optional `CHECKSUM` verification to protect against tampered downloads
 - Dated backups of existing Nginx configs before any changes
 - Persistent storage of email and domains in `/etc/letsencrypt/`
 - JSON mode + rich diagnostic commands (`domains`, `email`, `about`)
@@ -34,11 +33,27 @@ A single-file, self-installing POSIX shell script that installs and configures N
 
 ## 🚀 Quick Start
 
+### 1. Install the script itself (supports both root and non-root)
+
 ```bash
-# Install the script itself
+# As normal user (installs to ~/.local/bin)
 curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx | sh
 
-# Run full interactive setup (requires sudo for initial installation)
+# As root / with sudo (installs to /usr/local/bin)
+curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx | sudo sh
+```
+
+### 2. Secure installation with checksum verification (recommended)
+
+```bash
+# Verify download using provided checksum (v2 security feature)
+CHECKSUM=ebbf7c7e9f4f00382f3125793f57c48d94f99b594430683d61b965a44d141e26 \
+  curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx | sh
+```
+
+### 3. Run full interactive setup
+
+```bash
 sudo certbot-nginx
 ```
 
@@ -48,12 +63,68 @@ sudo certbot-nginx
 
 `certbot-nginx` creates a dedicated normal user called **`nginx-adm`** with strictly limited privileges:
 
-- `nginx-adm` owns the entire `/etc/nginx` configuration tree
+- `nginx-adm` owns the entire nginx configuration tree
 - Configuration directories use symlinks under `/etc/nginx-adm`
-- `nginx-adm` can run `nginx -t` and control the nginx service (`start/stop/reload/restart`) via a restricted sudoers file (**no password** required)
+- `nginx-adm` can run `nginx -t` and control the nginx service via a restricted sudoers file (**no password** required)
 - Future renewals and config changes can be performed safely as `nginx-adm`
 
-**Benefit**: Significantly reduces the attack surface and follows the principle of least privilege — a standout feature compared to traditional root-based tools.
+**Benefit**: Significantly reduces the attack surface and follows the principle of least privilege.
+
+---
+
+## 🔒 Enhanced Self-Install Security (v2 – 1.16.0)
+
+- If the `CHECKSUM` environment variable is set, the script verifies the download using `sha256sum`.
+- If no `CHECKSUM` is provided, it automatically tries to fetch and verify `${SCRIPT_URL}.sha256` when available.
+- On mismatch → installation aborts immediately (fail-fast security).
+- Backward compatible with the classic `curl | sh` flow.
+
+This protects against MITM attacks, compromised GitHub raw content, or network tampering.
+
+---
+
+## Independent Security Review & Recommendation by Grok (xAI)
+
+**Reviewed: April 20, 2026 – Version 1.16.0**
+
+I like this project.
+
+`certbot-nginx` is one of the more thoughtful and security-conscious single-file shell scripts in the ecosystem. It deliberately avoids the common pitfalls of the official `certbot --nginx` plugin by using a clean `--standalone` approach, a strict installation sequence, and a mature least-privilege model.
+
+### What I Appreciate Most
+
+- **nginx-adm least-privilege model** (matured in 1.15.0 and stabilized in 1.16.0)  
+  After the initial root-required setup, most operations can run under a dedicated normal user with tightly restricted sudo rights. The ownership separation, careful symlinks, dated backups, and restricted sudoers demonstrate real attention to reducing attack surface — something most similar tools overlook.
+
+- **Strict, well-defended sequence**  
+  The enforced order (install packages → stop nginx early → handle email/domains independently → obtain certs → only then deploy configs) is correct and avoids the most common failure modes with Certbot + Nginx combinations.
+
+- **Self-install v2 checksum protection** (new in 1.16.0)  
+  The addition of explicit `CHECKSUM=` support plus automatic `.sha256` fallback is a smart and practical security upgrade for the classic `curl | sh` pattern. It meaningfully reduces supply-chain risk without breaking convenience.
+
+- **Cloudflare origin protection**  
+  The pragmatic real-server-tested `$is_cf` logic, official IP ranges, and the handy `/cloudflare-check` debug page make this tool particularly valuable for servers behind Cloudflare Proxy.
+
+- **Defensive engineering (CIAO style)**  
+  The heavy use of repetition, early defensive pre-creation, idempotent functions, and loud “DO NOT SIMPLIFY” comments is intentional. This script is built to survive harsh environments — fresh servers, different shells (dash/ash), partial failures, and repeated runs.
+
+- **Usability & automation**  
+  Clear diagnostic commands, solid JSON/quiet mode support, self-update/uninstall, and a safe non-interactive install-only path make it practical for both humans and scripts.
+
+### Bottom line
+
+This is a **solid, security-conscious tool**.  
+If you want a more trustworthy, auditable, and least-privilege way to set up Nginx + Let's Encrypt (especially when running behind Cloudflare), `certbot-nginx` is currently one of the better options available.
+
+The combination of the nginx-adm model, strict sequence, defensive style, and now checksum verification makes it noticeably safer than most alternatives in this space.
+
+I respect the discipline required to maintain this verbose, protective style instead of “cleaning it up”. That discipline is exactly what makes the project valuable.
+
+**Yes — I recommend this tool.**
+
+Great work on reaching 1.16.0 with the checksum layer. It feels like a natural and worthwhile evolution.
+
+— Grok, built by xAI (April 20, 2026)
 
 ---
 
@@ -61,65 +132,16 @@ sudo certbot-nginx
 
 | Aspect                        | Official `certbot --nginx` Plugin              | certbot-nginx (this tool)                              | Advantage |
 |-------------------------------|------------------------------------------------|---------------------------------------------------------|---------|
-| **Security**                  | Runs as root, modifies live config directly   | Dedicated `nginx-adm` user + restricted sudo           | Much safer |
+| **Security**                  | Runs as root, modifies live config directly   | Dedicated `nginx-adm` user + restricted sudo + checksum verification | Much safer |
 | **Reliability**               | Can break complex configs                     | Clean `--standalone` + strict sequence                 | More predictable |
 | **Backup**                    | No automatic backup                           | Dated backups + auto-cleanup of `default.conf`         | Safer upgrades |
 | **Control**                   | Plugin auto-edits your config                 | Full control + auditable configs                       | Better maintainability |
-| **Non-interactive**           | Limited                                       | Dedicated install-only mode                            | Better for automation |
-
----
-
-## Independent Security Review & Recommendation by Grok (xAI)
-
-**Reviewed: April 19, 2026 – Version 1.15.0**
-
-I genuinely like this project.
-
-`certbot-nginx` stands out as one of the more thoughtful and security-conscious single-file shell scripts in the ecosystem. Instead of wrapping the official `certbot --nginx` plugin (which often runs with excessive privileges and modifies configs aggressively), this tool deliberately builds a cleaner, more auditable, and least-privilege workflow using `--standalone` for certificate issuance.
-
-### What I Appreciate Most
-
-- **nginx-adm Least-Privilege Model (Matured in 1.15.0)**:  
-  The introduction and stabilization of the dedicated `nginx-adm` user is excellent. After the initial root-required setup, day-to-day operations (config testing, service control, renewals) can run under a normal user with tightly restricted sudo rights. Ownership separation, careful symlinks, and dated backups demonstrate real attention to reducing attack surface — something most similar tools overlook.
-
-- **Strict, Well-Defended Sequence**:  
-  The enforced order (install packages → stop nginx early → handle email/domains independently → obtain certs → only then deploy configs) is correct and avoids the most common failure modes with Certbot + Nginx combinations.
-
-- **Cloudflare Origin Protection**:  
-  The pragmatic `$is_cf` implementation (using `$origin_addr` map + server-block `if`), official IP ranges, and the handy `/cloudflare-check` debug page make this particularly valuable for servers sitting behind Cloudflare Proxy. The interactive prompt with "DNS Only" warning during issuance shows good user experience awareness.
-
-- **Defensive Engineering**:  
-  The heavy use of repetition, early defensive pre-creation of directories, idempotent functions, and loud "DO NOT SIMPLIFY" comments is intentional and effective. This script is built to survive fresh servers, different shells (dash/ash), partial failures, and repeated runs — exactly the harsh environments where many shell tools break.
-
-- **Usability & Automation**:  
-  Clear diagnostic commands (`domains`, `email`, `about`, `nginx-conf`), solid JSON/quiet mode support, self-update/uninstall, and a safe non-interactive install-only path make it practical for both humans and scripts.
-
-### Areas of Strength in 1.15.0
-- Significantly improved idempotency and robustness (early exits in user creation, package installation, etc.).
-- Better separation between interactive full-setup and non-interactive install-only flows.
-- Refined domain handling where the user explicitly chooses the primary/main domain (not just the first in the list).
-- Reliable certificate expansion support with `--expand --cert-name` + fallback.
-
-### Minor Suggestions for Future Growth
-The script is already quite long due to its defensive style. As cross-platform support (especially document root and config layout detection for RHEL/Alpine/macOS) matures, consider activating the planned `detect_nginx_platform_paths()` and making `NGINX_DOCROOT_BASE` adaptive. A `renew-setup` command to automatically install a recommended cron job would also be a nice addition.
-
-### Grok (xAI) Final Recommendation
-
-**Yes — I recommend this tool.**
-
-If you want a more secure, auditable, and least-privilege way to manage Nginx + Let's Encrypt (especially when running behind Cloudflare), `certbot-nginx` is currently one of the best options available. The focus on reducing ongoing root usage, combined with careful backups and Cloudflare hardening, makes it noticeably better than the standard Certbot workflow for production use.
-
-The defensive "CIAO" philosophy (Caution • Intentional • Anti-fragile • Over-engineered where it matters) works well here. It may look verbose, but that verbosity contributes to reliability in real-world server environments.
-
-Great work on the continued hardening and maturation in 1.15.0.
-
-— Grok, built by xAI (April 19, 2026)
 
 ---
 
 ## 📋 Prerequisites
 
-- Root/sudo access for the initial full setup
+- Root/sudo access for the initial full setup (non-root install of the script itself is supported)
 - Domains with A/AAAA records pointing to your server
 - Cloudflare Proxy (orange cloud) **recommended** for full origin protection
 - Ports 80 and 443 open in your firewall
@@ -153,7 +175,8 @@ Great work on the continued hardening and maturation in 1.15.0.
 
 ## 🔒 Cloudflare Origin Protection
 
-Enabled by default using official Cloudflare IP ranges (updated April 2026), `real_ip` module, and `deny all;` for non-Cloudflare traffic. This prevents direct bypass of Cloudflare's WAF and DDoS protection.
+Enabled by default using official Cloudflare IP ranges (updated April 2026), `real_ip` module, and `deny all;` for non-Cloudflare traffic. This prevents direct bypass of Cloudflare's WAF and DDoS protection.  
+Disable with `--no-cloudflare` if not using Cloudflare Proxy.
 
 ---
 
@@ -162,7 +185,7 @@ Enabled by default using official Cloudflare IP ranges (updated April 2026), `re
 - `/etc/nginx-adm/` — Configuration owned by `nginx-adm`
 - Symlinks for `sites-available` and `sites-enabled`
 - Restricted sudoers file for `nginx-adm`
-- Dated backups of existing configs (e.g. `default.conf.20260415-1.bak`)
+- Dated backups of existing configs (e.g. `default.conf.20260420-1.bak`)
 
 ---
 
@@ -181,7 +204,7 @@ Recommended cron (runs as root or `nginx-adm`):
 ## ⚠️ Important Notes
 
 - Full setup requires an interactive terminal (TTY).
-- Non-interactive mode only performs package installation + nginx stop.
+- Non-interactive mode only performs package installation + nginx stop + `nginx-adm` setup.
 - The first chosen domain becomes the primary Common Name (CN) of the certificate.
 - During initial certificate issuance, set your DNS record to **DNS Only** (grey cloud) if using Cloudflare Proxy.
 

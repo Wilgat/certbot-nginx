@@ -5,13 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.16.0] - 2026-04-19
 
 ### Added
+- **Self-install security upgrade (v2)**:
+  - New function `perform_self_install_v2()` with layered checksum verification.
+  - If `CHECKSUM=<sha256>` environment variable is set, the downloaded script is strictly verified against it before installation.
+  - If no `CHECKSUM` is provided, the script automatically attempts to fetch and verify `${SCRIPT_URL}.sha256` (when available).
+  - On checksum mismatch → immediate `die()` with clear security error (prevents tampered downloads).
+  - Full defensive comment block documenting the v2 procedure, rationale, and upgrade from previous version.
 - Support for `--no-cloudflare` flag to disable Cloudflare IP restriction during setup.
 
 ### Changed
+- `perform_self_install()` renamed to `perform_self_install_v2()` (old name preserved in comments for clarity).
 - Improved domain handling logic in interactive mode (main domain is now explicitly chosen by the user and always placed first).
+- Self-update and installation paths now use the new v2 function (minimal change, backward-compatible behavior preserved).
 
 ### Fixed
 - **Critical fix for certificate expansion**: When adding new domains to an existing Let's Encrypt certificate, Certbot no longer fails with the "expand" confirmation prompt in non-interactive mode.
