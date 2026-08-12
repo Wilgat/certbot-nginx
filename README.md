@@ -1,6 +1,6 @@
 # certbot-nginx
 
-[![Version](https://img.shields.io/badge/Version-1.16.0-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
+[![Version](https://img.shields.io/badge/Version-1.16.1-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Philosophy](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()
@@ -48,16 +48,22 @@ curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-n
 ### 2. Secure installation with checksum verification (recommended)
 
 ```bash
-# Verify download using provided checksum (v2 security feature)
-CHECKSUM=ebbf7c7e9f4f00382f3125793f57c48d94f99b594430683d61b965a44d141e26 \
+# Optional strict pin (Shape B). Prefer automatic companion ${SCRIPT_URL}.sha256 when unset.
+# Refresh the hex from certbot-nginx.sha256 after each release if you pin.
+CHECKSUM=c8df3a31c6c1097fb318bd97c1f7dcedfa64773affec2a00855fb8e8f444ed4f \
   curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx | sh
 ```
 
-### 3. Run full interactive setup
+### 3. Run full interactive setup (domain)
+
+Empty argv is **Type O install-ensure** only (install the CLI if missing).  
+Host Nginx + Let's Encrypt setup is an **explicit** domain command:
 
 ```bash
-sudo certbot-nginx
+sudo certbot-nginx setup
 ```
+
+(`run` is an alias for `setup`.)
 
 ---
 
@@ -165,7 +171,7 @@ Great work on reaching 1.16.0 with the checksum layer. It feels like a natural a
 
 | Command                        | Description                                              |
 |--------------------------------|----------------------------------------------------------|
-| `sudo certbot-nginx`           | Full interactive setup                                   |
+| `sudo certbot-nginx setup`     | Full interactive Nginx + Certbot setup                   |
 | `sudo certbot-nginx nginx-conf`| Regenerate configs only (with backup)                    |
 | `sudo certbot-nginx domains`   | Show saved domains                                       |
 | `sudo certbot-nginx email`     | Show saved Let's Encrypt email                           |

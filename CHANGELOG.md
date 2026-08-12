@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.1] - 2026-08-12
+
+### Added
+- Explicit domain commands **`setup`** / **`run`** for full Nginx + Certbot host setup (root-gated on every path).
+- Product law under `docs/requirements/` (class, bootstrap chain, domain, Type 0 shell surfaces).
+- Non-destructive Core test suite under `tests/` (install lifecycle, checksum transparency, domain surface gates).
+- Product reviews under `docs/reviews/`.
+
+### Changed
+- **Type O empty argv** is install-ensure only (no host mutation); README and help document `sudo certbot-nginx setup` for domain work.
+- Channel Config uses env-overridable `REPO_USER` / `REPO_NAME` / `SCRIPT_URL` defaults; **`FORCE_GLOBAL` default is 0**.
+- Automatic companion digest accepts bare hex sidecars; human mode reports companion **link / expected / actual / result**.
+- `output_json` call sites corrected for version-check, install, uninstall, and self-update success paths.
+
+### Fixed
+- Non-interactive / JSON **`self-uninstall`** fail-closed without **`--force`** (`confirm_required`).
+- Install failure no longer masked as success (`maybe_install_v2` propagates exit status).
+- Dispatcher propagates non-zero exits from lifecycle and domain commands; **`setup`** propagates setup status.
+- Root gate on **`setup`** / **`run`** / non-interactive host setup and **`nginx-conf`** before host mutation.
+- Help text no longer describes foreign product DNA (timer / Java / Maven).
+
 ## [1.16.0] - 2026-04-19
 
 ### Added

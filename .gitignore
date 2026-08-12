@@ -1,0 +1,78 @@
+# =============================================================================
+# .gitignore — skill-create-gitignore
+# Detected: Shell (POSIX ./certbot-nginx)
+# Docs: track docs/requirements/** + docs/reviews/** ; ignore harness trees
+# Artifacts: temp, caches, secrets, OS junk ignored
+# Bootstrap reference copy selfmanaged/ stays local
+# =============================================================================
+
+# --- Secrets / local env ---
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+!*.key.example
+
+# --- OS / editors ---
+.DS_Store
+.DS_Store?
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.code-workspace
+
+# --- Temp / scratch / logs ---
+tmp/
+temp/
+temps/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.log
+logs/
+*.pid
+*.seed
+
+# --- Generic build / caches ---
+build/
+dist/
+out/
+output/
+.cache/
+*.cache
+
+# --- Shell / local run debris ---
+*.YYYYMMDD-*.bak
+
+# --- Agent harness (root) — local only ---
+AGENTS.md
+CLAUDE.md
+.claude/
+.cursor/
+.codex/
+
+# --- Bootstrap reference ship unit (specialize A) — not product B ---
+selfmanaged
+selfmanaged/
+
+# --- Docs layer: track requirements + product reviews; ignore harness ---
+docs/**
+!docs/.gitignore
+!docs/requirements/
+!docs/requirements/**
+!docs/reviews/
+!docs/reviews/**
+
+# Product tests are versioned (not under docs/**)
+# tests/ tracked by default (no ignore)

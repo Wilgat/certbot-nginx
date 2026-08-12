@@ -322,19 +322,20 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.16.0"
+VERSION="1.16.1"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
 
 # -------- Repository source (used for self-update / installation) ------------
-REPO_USER="Wilgat"
-REPO_NAME="certbot-nginx"
-SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}"
+# Env may override channel (tests / mirrors). Defaults are product channel SSOT.
+: "${REPO_USER:=Wilgat}"
+: "${REPO_NAME:=certbot-nginx}"
+: "${SCRIPT_URL:=https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}}"
 
 # ----------------------------------- Force Flags  ----------------------------
 : "${FORCE_USER:=0}"
-: "${FORCE_GLOBAL:=1}"
+: "${FORCE_GLOBAL:=0}"
 : "${FORCE_REINSTALL:=0}"
 
 # ----------------------------- Quiet & JSON Mode -----------------------------
@@ -874,10 +875,15 @@ version_check() {
     local_version=$(get_installed_version)
 
     if [ "${JSON}" -eq 1 ]; then
-        output_json "version_check" \
+        # message arg must be empty string so remaining pairs are key/value (not shifted)
+        _is_latest="false"
+        if [ "$local_version" = "$REMOTE_VERSION" ]; then
+            _is_latest="true"
+        fi
+        output_json "version_check" "ok" \
             "local_version" "$local_version" \
             "remote_version" "$REMOTE_VERSION" \
-            "is_latest" "$( [ "$local_version" = "$REMOTE_VERSION" ] && echo "true" || echo "false" )"
+            "is_latest" "${_is_latest}"
     else
         info "Checking latest version of ${APP_NAME}..."
         msg "Local version : ${local_version}"
@@ -928,7 +934,7 @@ self_update_v2() {
 
     if [ "$local_version" = "$REMOTE_VERSION" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
         if [ "${JSON}" -eq 1 ]; then
-            output_json "success" "message" "Already running the latest version (${REMOTE_VERSION})."
+            output_json "success" "Already running the latest version (${REMOTE_VERSION})."
         else
             success "Already running the latest version (${REMOTE_VERSION})."
         fi
@@ -986,7 +992,7 @@ self_uninstall() {
 
     if [ -z "$bin_path" ]; then
         if [ "${JSON}" -eq 1 ]; then
-            output_json "success" "message" "${APP_NAME} is not installed. Nothing to uninstall."
+            output_json "success" "" "message" "${APP_NAME} is not installed. Nothing to uninstall."
         else
             if [ "${FORCE_REINSTALL:-0}" -eq 1 ] || [ "${FORCE_USER:-0}" -eq 1 ] || [ "${FORCE_GLOBAL:-0}" -eq 1 ]; then
                 warn "${APP_NAME} is not installed. Nothing to uninstall."
@@ -997,20 +1003,24 @@ self_uninstall() {
         return 0
     fi
 
-    # Confirm before removal (unless --force or non-interactive)
-    if [ "${FORCE_REINSTALL:-0}" -eq 0 ] && [ -t 0 ] && [ -t 1 ] && [ "${QUIET}" -eq 0 ] && [ "${JSON}" -eq 0 ]; then
+    # Fail-closed: machine/non-interactive remove requires --force (Type 0 self-management)
+    if [ "${FORCE_REINSTALL:-0}" -eq 0 ]; then
+        if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Confirmation required to uninstall (pass --force)" "confirm_required"
+            else
+                error "Confirmation required to uninstall (pass --force or confirm interactively)."
+            fi
+            return 1
+        fi
         printf "${YELLOW}This will remove: %s${NC}\n" "$bin_path"
         printf "Continue? (y/N): "
         read -r answer || true
         case "$answer" in
             [Yy]*|[Yy][Ee][Ss]*) ;;
-            *) 
-                if [ "${JSON}" -eq 1 ]; then
-                    output_json "success" "message" "Uninstall cancelled by user."
-                else
-                    msg "Uninstall cancelled by user."
-                fi
-                return 0 
+            *)
+                msg "Uninstall cancelled by user."
+                return 0
                 ;;
         esac
     fi
@@ -1046,7 +1056,7 @@ self_uninstall() {
     fi
 
     if [ "${JSON}" -eq 1 ]; then
-        output_json "success" "message" "${APP_NAME} has been uninstalled."
+        output_json "success" "${APP_NAME} has been uninstalled."
     else
         success "${APP_NAME} has been uninstalled."
     fi
@@ -1223,7 +1233,7 @@ perform_self_install_v2() {
 
     if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
         if [ "${JSON}" -eq 1 ]; then
-            output_json "success" "message" "${APP_NAME} is already installed."
+            output_json "success" "${APP_NAME} is already installed."
         else
             success "${APP_NAME} is already installed. Use --force to override."
         fi
@@ -1348,9 +1358,18 @@ perform_self_install_v2() {
             }
 
             if curl -fsSL -w "%{http_code}" "${SCRIPT_URL}.sha256" -o "${sha_file}" 2>/dev/null | grep -q "^200"; then
-                if sha256sum -c "${sha_file}" --status 2>/dev/null < "${tmp_file}"; then
+                # Accept bare hex or classic "HASH  filename" sidecar (first field only)
+                _exp=$(awk '{print $1; exit}' "${sha_file}" | tr -d ' \t\r\n')
+                _act=$(sha256sum "${tmp_file}" | awk '{print $1}')
+                if [ "${JSON}" -eq 0 ]; then
+                    info "Companion link: ${SCRIPT_URL}.sha256"
+                    info "Expected SHA-256: ${_exp}"
+                    info "Actual SHA-256: ${_act}"
+                fi
+                if [ -n "${_exp}" ] && [ "${_exp}" = "${_act}" ]; then
                     downloaded_checksum_ok=1
                     if [ "${JSON}" -eq 0 ]; then
+                        success "Automatic checksum result: PASS"
                         success "Automatic checksum verification passed (${SCRIPT_URL}.sha256)."
                     fi
                 else
@@ -1358,6 +1377,7 @@ perform_self_install_v2() {
                     if [ "${JSON}" -eq 1 ]; then
                         output_json_error "Automatic checksum verification failed" "checksum_mismatch"
                     else
+                        info "Automatic checksum result: FAIL"
                         die "Checksum verification failed (mismatch with ${SCRIPT_URL}.sha256). Installation aborted for security."
                     fi
                     return 1
@@ -1389,9 +1409,17 @@ perform_self_install_v2() {
             }
 
             if wget -q --server-response "${SCRIPT_URL}.sha256" -O "${sha_file}" 2>&1 | grep -q "HTTP/1.1 200"; then
-                if sha256sum -c "${sha_file}" --status 2>/dev/null < "${tmp_file}"; then
+                _exp=$(awk '{print $1; exit}' "${sha_file}" | tr -d ' \t\r\n')
+                _act=$(sha256sum "${tmp_file}" | awk '{print $1}')
+                if [ "${JSON}" -eq 0 ]; then
+                    info "Companion link: ${SCRIPT_URL}.sha256"
+                    info "Expected SHA-256: ${_exp}"
+                    info "Actual SHA-256: ${_act}"
+                fi
+                if [ -n "${_exp}" ] && [ "${_exp}" = "${_act}" ]; then
                     downloaded_checksum_ok=1
                     if [ "${JSON}" -eq 0 ]; then
+                        success "Automatic checksum result: PASS"
                         success "Automatic checksum verification passed."
                     fi
                 else
@@ -1399,6 +1427,7 @@ perform_self_install_v2() {
                     if [ "${JSON}" -eq 1 ]; then
                         output_json_error "Automatic checksum verification failed" "checksum_mismatch"
                     else
+                        info "Automatic checksum result: FAIL"
                         die "Checksum verification failed. Installation aborted for security."
                     fi
                     return 1
@@ -1440,7 +1469,7 @@ perform_self_install_v2() {
     fi
     
     if [ "${JSON}" -eq 1 ]; then
-        output_json "success" "message" "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
+        output_json "success" "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}" "path" "${INSTALL_PATH}"
     else
         success "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
         if [ "${downloaded_checksum_ok}" -eq 1 ]; then
@@ -1504,7 +1533,8 @@ maybe_install_v2() {
 
     if [ "$should_install" = "true" ]; then
         perform_self_install_v2
-        exit 0
+        # Propagate install failure (never mask non-zero as success)
+        exit $?
     fi
 }
 
@@ -1722,7 +1752,7 @@ show_certbot_nginx_help() {
             "app" "${APP_NAME}" \
             "version" "${VERSION}" \
             "message" "Help text available in human mode. Run without --json." \
-            "note" "Use --json with status, about, version, etc. for machine output."
+            "note" "Use --json with about, version, domains, email, version-check for machine output."
         return 0
     fi
 
@@ -1735,30 +1765,35 @@ show_certbot_nginx_help() {
 ${APP_NAME} v${VERSION} — ${DESCRIPTION}
 
 Usage:
-${APP_NAME}                          Setup environment + build + run (preserves project)
-${APP_NAME} status                   Show application status
-${APP_NAME} about                    Full diagnostics (Java, Maven, project, etc.)
+${APP_NAME}                          Type O install-ensure (install CLI if missing; no-op if present)
+${APP_NAME} install                  Install this CLI (user or global by privilege)
+${APP_NAME} setup                    Full Nginx + Let's Encrypt setup (requires root)
+${APP_NAME} run                      Alias for setup
+${APP_NAME} about                    Diagnostics (install paths, nginx platform, user, shell)
 ${APP_NAME} version                  Show version
-${APP_NAME} version-check            Compare with latest
-${APP_NAME} self-update              Update to latest version
-${APP_NAME} self-uninstall           Remove timer from the system
-${APP_NAME} reinstall                Force reinstall
+${APP_NAME} version-check            Compare with latest on SCRIPT_URL channel
+${APP_NAME} self-update              Update this CLI to latest version
+${APP_NAME} self-uninstall           Remove this CLI binary from the system
 ${APP_NAME} help                     This help
 ${APP_NAME} domains                  Display current domains
 ${APP_NAME} email                    Display current Let's Encrypt email
-${APP_NAME} nginx-conf               Re-generate only Nginx configuration files
+${APP_NAME} nginx-conf               Re-generate only Nginx configuration files (root)
 
 Options:
 --quiet, -q            Suppress non-error messages
---json                 Machine-readable JSON output (implies --quiet) 
---no-cloudflare        Not using cloudflare
+--json                 Machine-readable JSON output (implies --quiet)
+--force, --reinstall   Force reinstall path for install/self-update
+--no-cloudflare        Disable Cloudflare-only origin protection
 
 Important Notes:
-• Normal run preserves your existing project files, pom.xml, and source code.
+• Empty argv is install-ensure only (Type O). Host Nginx/Certbot setup uses: sudo ${APP_NAME} setup
+• Prefer nginx-adm for day-to-day nginx config ops after initial setup
 
 Examples:
-${APP_NAME}                              # Normal run (recommended)
+curl -fsSL ${SCRIPT_URL} | sh          # install CLI (non-root → user bin)
+sudo ${APP_NAME} setup                 # full interactive Nginx + Certbot setup
 ${APP_NAME} about --json
+${APP_NAME} domains
 
 EOF
 }
@@ -3410,6 +3445,8 @@ run_interactive_setup() {
 # =============================================================================
 
 run_non_interactive_setup() {
+    # Host mutation requires root in all modes (interactive and non-interactive)
+    check_root
     ensure_letsencrypt_structure
 
     info "Running in non-interactive mode (install-only)"
@@ -3838,23 +3875,43 @@ backup_nginx_sites_configs() {
 
 main_certbot_nginx_app() {
     # Safe defaults (repeated on purpose - defensive style)
-    : "${HOME:=/root}"
+    # Resolve HOME before user-bin paths (set -u / stripped-env safe)
+    if [ -z "${HOME:-}" ]; then
+        HOME=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)
+    fi
+    : "${HOME:=/tmp}"
     : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
     : "${QUIET:=0}"
     : "${JSON:=0}"
     : "${USE_CLOUDFLARE:=1}"   # Default: enable Cloudflare protection
+    : "${FORCE_REINSTALL:=0}"
 
-    local COMMAND="run"
+    local COMMAND=""
 
     # =============================================================================
-    # AUTO-INSTALL FOR ONE-LINER (curl | sh) - MUST STAY AT THE TOP
+    # TYPE O EMPTY ARGV = INSTALL-ENSURE (inherit selfmanaged architecture)
+    # Domain host setup MUST use explicit setup|run — never bare empty argv.
     # =============================================================================
-    if ! is_installed && [ $# -eq 0 ]; then
+    if [ $# -eq 0 ]; then
+        if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+            if [ "${JSON}" -eq 1 ]; then
+                output_json "success" "" \
+                    "app" "${APP_NAME}" \
+                    "version" "${VERSION}" \
+                    "message" "Already installed. Use '${APP_NAME} setup' for Nginx + Certbot domain setup."
+            else
+                success "${APP_NAME} already installed (Type O install-ensure no-op)."
+                info "For full Nginx + Let's Encrypt setup, run: sudo ${APP_NAME} setup"
+            fi
+            exit 0
+        fi
         if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
             perform_self_install_v2
         else
             maybe_install_v2
         fi
+        exit $?
     fi
 
     # =============================================================================
@@ -3874,6 +3931,12 @@ main_certbot_nginx_app() {
                 ;;
             --no-cloudflare)
                 USE_CLOUDFLARE=0
+                ;;
+            install)
+                COMMAND="install"
+                ;;
+            setup|run)
+                COMMAND="setup"
                 ;;
             version|-v)
                 COMMAND="version"
@@ -3915,10 +3978,40 @@ main_certbot_nginx_app() {
         shift
     done
 
+    if [ -z "${COMMAND}" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            output_json_error "No command provided" "bad_argument"
+        else
+            error "No command provided. Run '${APP_NAME} help' for usage."
+            info "Type O empty argv is install-ensure only. Domain setup: sudo ${APP_NAME} setup"
+        fi
+        exit 1
+    fi
+
     # =============================================================================
     # COMMAND DISPATCH
     # =============================================================================
     case "${COMMAND}" in
+        install)
+            if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+                perform_self_install_v2
+            else
+                maybe_install_v2
+            fi
+            exit $?
+            ;;
+
+        setup)
+            # Core domain setup — explicit verb (not empty argv); always root-gated
+            check_root
+            if [ "${TTY:-0}" -eq 1 ]; then
+                run_interactive_setup
+            else
+                run_non_interactive_setup
+            fi
+            exit $?
+            ;;
+
         version)
             if [ "${JSON}" -eq 1 ]; then
                 output_json "version" "" "app" "${APP_NAME}" "version" "${VERSION}"
@@ -3930,44 +4023,44 @@ main_certbot_nginx_app() {
 
         version-check)
             version_check
-            exit 0
+            exit $?
             ;;
 
         self-update)
             self_update_v2
-            exit 0
+            exit $?
             ;;
 
         self-uninstall)
             self_uninstall
-            exit 0
+            exit $?
             ;;
 
         about)
             show_nginx_system_diagnostics
-            exit 0
+            exit $?
             ;;
 
         help)
             show_certbot_nginx_help
-            exit 0
+            exit $?
             ;;
 
         domains)
             show_domains
-            exit 0
+            exit $?
             ;;
 
         email)
             show_email
-            exit 0
+            exit $?
             ;;
 
         nginx-conf)
             check_root
             local domains
             domains=$(load_existing_domains)
-            [ -z "$domains" ] && die "No domains found. Run full setup first."
+            [ -z "$domains" ] && die "No domains found. Run full setup first (sudo ${APP_NAME} setup)."
             local main_domain
             main_domain=$(get_main_domain_from_file "$domains")
             [ -z "$main_domain" ] && die "Could not determine main domain."
@@ -3976,16 +4069,6 @@ main_certbot_nginx_app() {
             backup_nginx_sites_configs
             deploy_domain_nginx_configs "$domains" "$main_domain"
             info "✅ Nginx configs regenerated using main domain: ${main_domain}"
-            exit 0
-            ;;
-
-        run)
-            # Core setup flow - respects interactive vs non-interactive mode
-            if [ "$TTY" -eq 1 ]; then
-                run_interactive_setup
-            else
-                run_non_interactive_setup
-            fi
             exit 0
             ;;
 

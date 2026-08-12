@@ -1,0 +1,8 @@
+# Nested SSOT aligned with root .gitignore (skill-create-gitignore)
+# Track requirements + product reviews under docs/; keep harness local.
+*
+!.gitignore
+!requirements/
+!requirements/**
+!reviews/
+!reviews/**
