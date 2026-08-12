@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dispatcher propagates non-zero exits from lifecycle and domain commands; **`setup`** propagates setup status.
 - Root gate on **`setup`** / **`run`** / non-interactive host setup and **`nginx-conf`** before host mutation.
 - Help text no longer describes foreign product DNA (timer / Java / Maven).
+- Bootstrap-chain Implementation Notes: peer project path uses portable `{{HOME}}/prjs/selfmanaged` (and `./selfmanaged`) instead of a host-absolute workspace root.
 
 ## [1.16.0] - 2026-04-19
 

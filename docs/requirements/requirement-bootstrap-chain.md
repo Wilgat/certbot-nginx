@@ -61,7 +61,7 @@ The project **MUST** maintain an explicit hop table (Implementation Notes §3.1)
 
 | Position | Product | Ship unit / reference | Role |
 |----------|---------|----------------------|------|
-| **Root / immediate origin (A)** | `selfmanaged` | Peer project `/var/www/grok.dr-sense.com/prjs/selfmanaged` and workspace reference copy `./selfmanaged` (must stay frozen Type 0 bootstrap) | Architecture + Type 0 online self-managed law source |
+| **Root / immediate origin (A)** | `selfmanaged` | Peer project under host projects root: `{{HOME}}/prjs/selfmanaged` (when that peer exists) **and** workspace reference copy `./selfmanaged` (must stay frozen Type 0 bootstrap). **Do not** publish host-absolute paths that expand `$HOME` on the versioned surface | Architecture + Type 0 online self-managed law source |
 | **Leaf (B)** | `certbot-nginx` | `./certbot-nginx` + `certbot-nginx.sha256` | Specialized product: Type 0 + Nginx/Certbot domain |
 
 **Edge A → B:**
@@ -69,9 +69,9 @@ The project **MUST** maintain an explicit hop table (Implementation Notes §3.1)
 | Concern | Decision |
 |---------|----------|
 | Inherit | Type O empty argv install-ensure; online install + self-update/self-uninstall/version-check; companion `.sha256`; pipe entry calls main; quiet/json modes |
-| Retarget | `APP_NAME=certbot-nginx`; `REPO_USER=Wilgat`; `REPO_NAME=certbot-nginx`; `VERSION=1.16.0`; channel `https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx` |
+| Retarget | `APP_NAME=certbot-nginx`; `REPO_USER=Wilgat`; `REPO_NAME=certbot-nginx`; `VERSION=1.16.1`; channel `https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx` |
 | Domain | `setup`/`run`, `domains`, `email`, `nginx-conf`, nginx-adm, Cloudflare origin, Certbot standalone — **leaf only** |
-| Archive of A | Peer git project + in-tree `./selfmanaged` byte-identical to peer at specialize time |
+| Archive of A | Peer git project (path form `{{HOME}}/prjs/selfmanaged` when present) + in-tree `./selfmanaged` byte-identical to peer at specialize time |
 
 ### 3.2 Specialize session (2026-08-12)
 
