@@ -5,7 +5,7 @@ Not product law (`docs/requirements/`). Not incidents (`docs/incidents/`).
 
 | File | Date | Scope | Status |
 |------|------|-------|--------|
-| `2026-08-12-product-review.md` | 2026-08-12 | product + Type 0 + domain + REQ coverage | Open findings (partial fixed same day) |
+| `2026-08-12-product-review.md` | 2026-08-12 | product + Type 0 + domain + REQ coverage | Open findings (CNX-DOM-01 deferred; housekeeping residual through 2026-08-19) |
 | `test-plan.md` | 2026-08-12 | TP map | Living |
 | `requirement-test-matrix.md` | 2026-08-12 | RTM | Living |
 

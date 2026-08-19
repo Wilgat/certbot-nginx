@@ -41,7 +41,7 @@ For shell CLIs without a separate Config class, the **mode SSOT** is the **globa
 **Rules:**
 
 1. Prompt, color, and hang-sensitive decisions **MUST** respect these globals and/or the shared `prompt_*` helpers—not ad-hoc `read` scattered in domain logic.  
-2. After global flags are parsed in `app_main`, subsequent code **MUST** see the updated `QUIET` / `JSON` / `FORCE` / `DEBUG` values.  
+2. After global flags are parsed in `main_certbot_nginx_app`, subsequent code **MUST** see the updated `QUIET` / `JSON` / `FORCE_REINSTALL` / `DEBUG` values.  
 3. Do **not** invent a second parallel mode system in individual commands.  
 4. Direct `[ -t … ]` checks **inside** `prompt_*` and carefully documented install helpers are allowed as part of the mode SSOT implementation; command business logic **SHOULD** call `prompt_*` instead of re-implementing prompt guards.
 
@@ -115,19 +115,20 @@ interactive   non-interactive
 | **Implementation** | Repo root `./certbot-nginx` |
 | **Mode globals** | `TTY`, `QUIET`, `JSON`, `DEBUG`, `FORCE`, `FORCE_REINSTALL` |
 | **TTY init** | `[ -t 0 ] && [ -t 1 ] && TTY=1` near config block |
-| **Flag parse SSOT** | `app_main` |
-| **Prompt SSOT** | `prompt_yes_no`, `prompt_ask` |
-| **Output SSOT** | `out_*` (`requirement-shell-output-requirements.md`) |
+| **Flag parse SSOT** | `main_certbot_nginx_app` |
+| **Prompt SSOT** | `prompt_yes_no` (optional default `yes`/`no`; empty answer uses default) · `prompt_ask` |
+| **Capture-safe prompts** | Domain helpers that return via `$(…)` set `PROMPT_TO_STDERR=1` so prompt text is not captured |
+| **Output SSOT** | `output_text` / `info` / `die` / `output_json` (`requirement-shell-output-requirements.md`) |
 | **No Node Config singleton** | Shell globals + helpers are the mode SSOT for this project |
 
 #### Command-level interactive matrix (normative)
 
 | Command / path | Interactive (TTY, not quiet/json) | Non-interactive / quiet / json |
 |----------------|-----------------------------------|--------------------------------|
-| Zero-arg, **not** installed (**Type O**) | `inst_maybe_install`: show note + `prompt_yes_no` install confirm | Auto path: quiet/json zero-arg → `inst_perform_install` without prompt; non-TTY human path → auto-install message + install |
-| Zero-arg, **already** installed local or global (**Type O**) | `inst_perform_install` success no-op (“already installed”); **not** help; no re-download without force | Same (quiet/json: structured success no-op) |
-| `install` | Install with human `out_*` messages | No prompt; honor force for reinstall; JSON structured results |
-| `self-uninstall` | `prompt_yes_no` unless `--force` | Without force: fail closed with explicit “requires --force” (JSON: `out_json_error` / `confirm_required`); never pretend user cancelled; with `--force`: remove without confirm |
+| Zero-arg, **not** installed (**Type O**) | `maybe_install_v2`: show note + `prompt_yes_no` install confirm | Auto path: quiet/json zero-arg → `perform_self_install_v2` without prompt; non-TTY human path → auto-install message + install |
+| Zero-arg, **already** installed local or global (**Type O**) | Type O success no-op (“already installed”); **not** help; no re-download without force | Same (quiet/json: structured success no-op) |
+| `install` | Install with human `info`/`success` messages | No prompt; honor force for reinstall; JSON structured results |
+| `self-uninstall` | `prompt_yes_no` unless `--force` | Without force: fail closed with explicit “requires --force” (JSON: `output_json_error` / `confirm_required`); never pretend user cancelled; with `--force`: remove without confirm |
 | `self-update` / `version-check` | Human status messages | No prompts; fail loud if `SCRIPT_URL` missing; JSON structured results |
 | `about` / `version` / `help` | Human diagnostics / help | Quiet: suppress human; JSON: structured object only |
 | Colors | When `TTY=1` and not quiet/json | No color under quiet/json |
@@ -138,7 +139,7 @@ interactive   non-interactive
 |-----------|----------|
 | `JSON=1` or `QUIET=1` | Return **1** (no / cancel)—never `read` |
 | Not a TTY on stdin or stdout | Return **1** (no)—never `read` |
-| TTY + interactive | Prompt via `out_msg_n`; yes → 0, else → 1 |
+| TTY + interactive | Prompt via `msg_n`; yes → 0, else → 1 |
 | Uninstall without force + non-TTY | Confirm fails → uninstall cancelled (safe default) |
 | Uninstall with `--force` | Skip confirm entirely |
 
@@ -148,14 +149,14 @@ interactive   non-interactive
 |-----------|----------|
 | `JSON=1` or `QUIET=1` | Return **default** without `read` |
 | Not a TTY (and `INTERACTIVE` ≠ 1) | Return **default** without `read` |
-| TTY interactive | Show current/default via `out_*`, then `read` |
+| TTY interactive | Show current/default via `msg_n`, then `read` |
 
-#### `inst_maybe_install` contract (this project)
+#### `maybe_install_v2` contract (this project)
 
 | Condition | Behavior |
 |-----------|----------|
 | Already installed (force off) | No-op success |
-| Quiet or JSON | No prompt; return without installing from this helper (zero-arg quiet/json uses `inst_perform_install` in `app_main` instead) |
+| Quiet or JSON | No prompt; return without installing from this helper (zero-arg quiet/json uses `perform_self_install_v2` in `main_certbot_nginx_app` instead) |
 | TTY interactive | Prompt install yes/no |
 | Non-TTY (pipe / automation) | **Auto-install** with clear human message when not quiet/json |
 

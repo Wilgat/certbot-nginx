@@ -82,22 +82,22 @@ certbot-nginx is a mature specialized product (online self-managed CLI + Nginx/C
 - **Description:** Env `SCRIPT_URL` could not override product channel (blocked isolated tests and mirrors).  
 - **Suggestion:** `: "${SCRIPT_URL:=…}"` composition (implemented).  
 
-### CNX-REQ-01 — Severity: P1 (high) — **open**
+### CNX-REQ-01 — Severity: P1 (high) — **fixed**
 - **Area:** requirements honesty  
-- **Status:** open  
+- **Status:** fixed (2026-08-18)  
 - **Location:** `requirement-shell-cli-storage`, automatic-checksum / output Implementation Notes  
-- **Description:** Active storage law DoD requires `util_resolve_storage` / about storage fields not present in ship unit; several REQs still claim bootstrap `inst_*`/`out_*` Implemented.  
+- **Description:** Storage resolver and about fields were missing; several REQs claimed bootstrap `inst_*`/`out_*` Implemented.  
 - **Impact:** False sufficiency / agents implement wrong names.  
-- **Suggestion:** Retarget notes to disk-truth handlers or mark storage N/A/Gap for this product.  
-- **Cross-ref:** prior sufficient-check verdict
+- **Suggestion:** Implemented `util_resolve_storage` + about fields; retargeted Implementation Notes to live ship names.  
+- **Cross-ref:** 1.16.2
 
-### CNX-SM-02 — Severity: P1 (high) — **open**
+### CNX-SM-02 — Severity: P1 (high) — **fixed**
 - **Area:** self-update  
-- **Status:** open  
+- **Status:** fixed (2026-08-18)  
 - **Location:** `self_update_v2`  
 - **Description:** No semver older-than-local refuse; any remote version difference reinstalls.  
 - **Impact:** Silent downgrade possible via channel.  
-- **Suggestion:** Add `ver_gt` refuse without `--force` (Partial already in self-management notes).  
+- **Suggestion:** `ver_gt` refuse without `--force` (implemented).  
 
 ### CNX-DOC-01 — Severity: P1 (high) — **fixed**
 - **Area:** product docs  
@@ -107,13 +107,13 @@ certbot-nginx is a mature specialized product (online self-managed CLI + Nginx/C
 - **Impact:** Operator confusion after Type O specialize.  
 - **Suggestion:** Change table to `sudo certbot-nginx setup` (implemented).  
 
-### CNX-DOC-02 — Severity: P2 (medium) — **open**
+### CNX-DOC-02 — Severity: P2 (medium) — **fixed**
 - **Area:** operator strings  
-- **Status:** open  
+- **Status:** fixed (2026-08-18)  
 - **Location:** domains/email JSON empty hints; internal msgs  
 - **Description:** “Run: `sudo ${APP_NAME}`” omits `setup`.  
 - **Impact:** Users re-hit Type O no-op.  
-- **Suggestion:** Point to `setup`.  
+- **Suggestion:** Point to `setup` (implemented).  
 
 ### CNX-TEST-01 — Severity: P2 (medium) — **fixed** (baseline suite)
 - **Area:** tests  
@@ -161,4 +161,67 @@ certbot-nginx is a mature specialized product (online self-managed CLI + Nginx/C
 | `docs/checklists/2026-08-12-checklist-bootstrap-specialize-product-certbot-nginx.md` | Specialize Pass |
 
 **Written by:** multi-agent council  
-**Review status:** Partial fixed (P0 closed; Core suite green; open P1 law/docs/downgrade)
+**Review status:** P0/P1 law-honesty + downgrade + operator `setup` strings fixed in 1.16.2; CNX-DOM-01 still deferred
+
+---
+
+## Housekeeping residual (2026-08-12 software-dev housekeeping)
+
+| Item | State after housekeeping |
+|------|--------------------------|
+| **`RQ-NGINX-CONF`** | **Created** + registry row; domain SSOT cites peer; RTM row added (partial TP) |
+| CNX-REQ-01 storage honesty | **Still open** — not closed this run |
+| CNX-SM-02 downgrade gate | **Still open** |
+| CNX-DOC-02 operator `setup` strings | **Still open** |
+| CNX-DOM-01 privileged setup tests | **Still deferred** |
+| Requirements git-surface | Harness path prefixes scrubbed from versioned REQ Related/Specializes |
+| Product version / ship unit | Unchanged **1.16.1** (law/docs only this run; no ship-byte change) |
+
+## Housekeeping residual (2026-08-13 software-dev housekeeping)
+
+| Item | State after this run |
+|------|----------------------|
+| H2 genesis → this root | Map **CONFIRMED** and **applied** (6 NEW + 76 UPDATE). Follow-up **desk→deck** residual applied (4 UPDATE + 2 NEW; 2 stale dest-only removed). Dest maps rebound (13 REQs recognized). |
+| **`RQ-NGINX-CONF`** + domain cite | **Confirm-as-is** (uncommitted from 2026-08-12; no further law rewrite) |
+| CNX-REQ-01 / CNX-SM-02 / CNX-DOC-02 | **Still open** |
+| CNX-DOM-01 | **Still deferred** |
+| `SECURITY.md` | Integrity posture aligned (automatic companion primary; pin secondary; CIAO table). No author-email invented. |
+| LICENSE author-email | **Still missing** — ask user before writing Copyright email |
+| Product version / ship unit | Unchanged **1.16.1**; companion digest **MATCH** |
+| Commit / push | **Stopped** — user did not authorize VCS; default SSH **orphan + DENIED**; matching vault exists for repository-user |
+
+## Housekeeping residual (2026-08-18 software-dev housekeeping)
+
+| Item | State after this run |
+|------|----------------------|
+| H2 genesis → this root | Rematch **published** and **AUTO-CONFIRMED** (housekeeping). Payload already applied earlier 2026-08-18 (81 NEW + 119 UPDATE). Rematch: NEW=0 UPDATE=3 dest-rebind maps **held** · DEST_ONLY=`nginx-adm` kept. Dest maps still recognize **13** REQs. |
+| Requirements | Registry ↔ disk **13**; **confirm-as-is** (incl. uncommitted **`RQ-NGINX-CONF`**). No invented keys. |
+| CNX-REQ-01 / CNX-SM-02 / CNX-DOC-02 | **Still open** at housekeeping time; **fixed later same day** in 1.16.2 (see below) |
+| CNX-DOM-01 | **Still deferred** |
+| Product version / ship unit | Unchanged **1.16.1** at housekeeping; later **1.16.2** |
+| Product source change | **No** at housekeeping — commit/push **skipped** |
+| LICENSE author-email | **Still missing** — not invented |
+| Default SSH | **DISCREPANCY** (DENIED + orphan default); matching vault for repository-user exists (session pre-git report) |
+
+## 1.16.2 law/code align (2026-08-18)
+
+| Item | State |
+|------|--------|
+| CNX-REQ-01 | **fixed** — `util_resolve_storage` + about fields; Implementation Notes use ship names |
+| CNX-SM-02 | **fixed** — `ver_gt` refuse on `self_update_v2` |
+| CNX-DOC-02 | **fixed** — operator strings point at `setup` |
+| Product version | **1.16.3** + companion digest regenerated |
+| Domain prompts | **1.16.3** — no raw `read` outside `prompt_*` (stderr-safe when captured) |
+
+## Housekeeping residual (2026-08-19 software-dev housekeeping)
+
+| Item | State after this run |
+|------|----------------------|
+| H2 genesis → this root | Rematch **published** and **AUTO-CONFIRMED** (housekeeping). Payload already applied earlier 2026-08-19 (75 NEW + 81 UPDATE). Rematch: NEW=0 UPDATE=3 dest-rebind maps **held** · DEST_ONLY=`nginx-adm` kept. Dest maps still recognize **13** REQs. |
+| Requirements | Registry ↔ disk **13**; **confirm-as-is** (incl. uncommitted **`RQ-NGINX-CONF`** now shipping). No invented keys. |
+| CNX-REQ-01 / CNX-SM-02 / CNX-DOC-02 | **Remain fixed** (1.16.2) |
+| CNX-DOM-01 | **Still deferred** (TP-CNX-10 / privileged setup) |
+| Product version / ship unit | **1.16.3**; companion digest **MATCH**; README optional pin hex refreshed to current digest |
+| Product source change | **Yes** vs HEAD **1.16.1** — auto commit/push in scope |
+| LICENSE author-email | **Still missing** — not invented |
+| Default SSH | **DISCREPANCY** (active profile `_default` GitHub DENIED); matching vault for repository-user exists (session pre-git report) |

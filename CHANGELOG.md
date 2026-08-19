@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.3] - 2026-08-18
+
+### Changed
+- Interactive domain setup (`ask_and_confirm_domains`, email, primary domain, Cloudflare) uses `prompt_yes_no` / `prompt_ask` only (no raw `read -rp`). Capture-safe prompts write to stderr.
+
+## [1.16.2] - 2026-08-18
+
+### Added
+- Isolated Type 0 scratch resolver `util_resolve_storage` (wired from `main_certbot_nginx_app`; `about` exposes `effective_storage` / `storage_dir`).
+- `prompt_yes_no` / `prompt_ask` (consume `TTY` SSOT) for install confirm and uninstall confirm.
+- `ver_gt` downgrade refuse on `self-update` unless `--force`.
+- `output_json` `@key` raw JSON insertion; `--debug` / `debug` helper.
+
+### Changed
+- Quiet mode still prints **warnings** and **errors** on stderr (info/success stay quiet).
+- Operator empty-state hints now say `sudo certbot-nginx setup` (not bare `sudo certbot-nginx`).
+- Requirement Implementation Notes retargeted to live ship function names.
+
+### Fixed
+- False Implemented notes that named bootstrap `out_*` / `inst_*` / `app_*` helpers the ship does not define.
+
 ## [1.16.1] - 2026-08-12
 
 ### Added
@@ -26,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Root gate on **`setup`** / **`run`** / non-interactive host setup and **`nginx-conf`** before host mutation.
 - Help text no longer describes foreign product DNA (timer / Java / Maven).
 - Bootstrap-chain Implementation Notes: peer project path uses portable `{{HOME}}/prjs/selfmanaged` (and `./selfmanaged`) instead of a host-absolute workspace root.
+- `SECURITY.md` integrity posture: automatic companion SHA-256 is primary; optional `CHECKSUM` pin is secondary; same-channel digest is byte consistency, not independent authenticity.
 
 ## [1.16.0] - 2026-04-19
 

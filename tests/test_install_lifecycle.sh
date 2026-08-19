@@ -171,8 +171,8 @@ run_test_install_lifecycle() {
     assert_eq "TP-CSUM-04 CHECKSUM match install exit 0" 0 "$_ec"
     assert_file_exists "TP-CSUM-04 install with good pin" "${_bin}"
 
-    # TP-LC-08 downgrade refuse — honest skip if product does not gate (Partial in self-management)
-    t_skip "TP-LC-08 downgrade refuse — product Partial (no ver_gt refuse yet); tracked in review CNX-SM-02"
+    # TP-LC-08: ship implements ver_gt refuse; Core does not fetch an older remote artifact
+    t_skip "TP-LC-08 downgrade refuse — ship has ver_gt; suite does not serve an older remote"
 
     # cleanup
     HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" FORCE_GLOBAL=0 \

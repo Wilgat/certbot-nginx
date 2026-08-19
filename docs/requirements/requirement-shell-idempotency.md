@@ -70,12 +70,12 @@ Force **MUST NOT** be used as a silent way to skip integrity verification.
 |------|------------------------|
 | **Product / binary** | `certbot-nginx` (`APP_NAME`) |
 | **Implementation file** | Repo root `./certbot-nginx` |
-| **Install detect SSOT** | `inst_is_installed` / `inst_get_version` |
-| **Install ensure SSOT** | `inst_perform_install` (+ download/atomic helpers) |
+| **Install detect SSOT** | `is_installed` / `get_installed_version` |
+| **Install ensure SSOT** | `perform_self_install_v2` |
 | **Force reinstall var** | `FORCE_REINSTALL` (default `0`); CLI `--force` must set this per `requirement-shell-cli-interface.md` |
 | **Remote channel** | `SCRIPT_URL` (required for version-check / self-update network steps) |
-| **User PATH integration** | `path_add_*` / `path_add_shell` — append only if marker/line absent |
-| **Uninstall PATH cleanup** | `inst_self_uninstall_cleanup_path` — only if `~/.local/bin` empty |
+| **User PATH integration** | `add_to_shell_path` — append only if marker/line absent |
+| **Uninstall PATH cleanup** | `self_uninstall` PATH cleanup — only if `~/.local/bin` empty |
 
 #### Command-level idempotency matrix (normative)
 

@@ -16,6 +16,7 @@
 | `RQ-SHELL-CLI-STORAGE` | requirement-shell-cli-storage | Scratch/cache storage resolve | shell | Active | `requirement-shell-cli-storage.md` | 2026-08-12 |
 | `RQ-SHELL-CLI-ZERO-ARGUMENTS` | requirement-shell-cli-zero-arguments | Empty argv Type O install-ensure | shell | Active | `requirement-shell-cli-zero-arguments.md` | 2026-08-12 |
 | `RQ-DOMAIN-CERTBOT-NGINX` | requirement-domain-certbot-nginx | Nginx + Certbot + Cloudflare + nginx-adm domain law (four pillars; EM-EXT) | domain | Active | `requirement-domain-certbot-nginx.md` | 2026-08-12 |
+| `RQ-NGINX-CONF` | requirement-nginx-conf | Nginx conf structure + domain-root defaults (term-aligned; artifacts, naming, locations, ownership) | webserver | Active | `requirement-nginx-conf.md` | 2026-08-12 |
 | `RQ-SHELL-IDEMPOTENCY` | requirement-shell-idempotency | Shell idempotency / re-run safety | shell | Active | `requirement-shell-idempotency.md` | 2026-08-12 |
 | `RQ-SHELL-INTERACTIVE-VS-NONINTERACTIVE` | requirement-shell-interactive-vs-noninteractive | Interactive vs non-interactive / curl\|sh | shell | Active | `requirement-shell-interactive-vs-noninteractive.md` | 2026-08-12 |
 | `RQ-SHELL-MODULAR-FUNCTION-DESIGN` | requirement-shell-modular-function-design | Single-file modular function design | shell | Active | `requirement-shell-modular-function-design.md` | 2026-08-12 |

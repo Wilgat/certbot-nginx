@@ -16,5 +16,6 @@
 | `requirement-shell-interactive-vs-noninteractive` | **TP-CLI-11**, **TP-LC-07** | confirm_required |
 | `requirement-shell-idempotency` | **TP-LC-10**, **TP-LC-05** | re-install; already-latest |
 | `requirement-shell-modular-function-design` | indirect | Behavior via commands |
-| `requirement-shell-cli-storage` | **n/a** | No surface (CNX-REQ-01) |
+| `requirement-shell-cli-storage` | **TP-CLI-05** | about JSON `effective_storage` / `storage_dir` |
 | `requirement-domain-certbot-nginx` | **TP-CNX** | Non-destructive smoke; full setup **todo** |
+| `requirement-nginx-conf` / **`RQ-NGINX-CONF`** | **TP-CNX** (partial) | Conf structure law registered; generator body asserts still host/manual — no dedicated conf-only TP yet |

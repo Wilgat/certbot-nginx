@@ -148,31 +148,34 @@ function_name() {
 | Item | Value for certbot-nginx |
 |------|------------------------|
 | **Product / binary** | `certbot-nginx` (`APP_NAME`) |
-| **Single shipped script** | Repo root `./certbot-nginx` (~2k lines, `#!/bin/sh`) |
-| **`src/` directory** | Present but empty — **not** a multi-file runtime layout yet |
-| **Domain prefix `certbot-nginx_*`** | **Not used** today (Type 0 lifecycle only; no product domain ops) |
-| **Bootstrap** | Direct execution when `${0##*/}` is `certbot-nginx` or `certbot-nginx.sh` → `app_main "$@"` |
+| **Single shipped script** | Repo root `./certbot-nginx` (POSIX `#!/bin/sh`) |
+| **`src/` directory** | Present but empty — **not** a multi-file runtime layout |
+| **Domain helpers** | Unprefixed / descriptive (`run_interactive_setup`, `create_nginx_adm_user`, `deploy_domain_nginx_configs`, …) — not `certbot-nginx_*` |
+| **Entry** | File ends with `main_certbot_nginx_app "$@"` (no basename gate; required for `curl \| sh`) |
 
 #### Live prefix inventory (authoritative categories)
 
-| Prefix | Live examples in `./certbot-nginx` |
-|--------|----------------------------------|
-| `out_` | `out_text`, `out_success`, `out_info`, `out_warn`, `out_error`, `out_die`, `out_plain`, `out_msg_n`, `out_empty_line`, `out_double_line`, `out_json`, `out_json_error` |
-| `inst_` | `inst_perform_install`, `inst_perform_install_prepare_target`, `inst_perform_install_download_with_checksum`, `inst_perform_install_download_without_checksum`, `inst_perform_install_atomic_install`, `inst_maybe_install`, `inst_self_update`, `inst_self_uninstall` (+ determine_bin / confirm_and_remove / cleanup_path), `inst_is_installed`, `inst_get_version` |
-| `ver_` | `ver_gt`, `ver_check` |
-| `path_` | `path_add_bashrc`, `path_add_zshrc`, `path_add_fish`, `path_add_shell` |
-| `util_` | `util_json_escape`, `util_sha256_file`, `util_fetch_remote_version`, `util_get_install_bin_path`, `util_backup`, `util_resolve_storage` (**wired** from `app_main` / `app_about`; SSOT: `requirement-shell-cli-storage.md`), `util_get_current_shell` |
-| `prompt_` | `prompt_ask`, `prompt_yes_no` |
-| `app_` | `app_about`, `app_version` (dispatcher routes `version` here), `app_help`, `app_main` |
+This product **does not** use bootstrap `out_*` / `inst_*` / `app_*` names. Disk-truth inventory:
+
+| Prefix / family | Live examples in `./certbot-nginx` |
+|-----------------|----------------------------------|
+| Output SSOT | `output_text`, `output_json`, `output_json_error` |
+| Output wrappers | `info`, `success`, `warn`, `error`, `die`, `debug`, `msg`, `msg_n`, `empty_line`, `double_line` |
+| Install / Type 0 lifecycle | `perform_self_install_v2`, `maybe_install_v2`, `is_installed`, `get_installed_version`, `self_update_v2`, `self_uninstall`, `version_check` |
+| `ver_` | `ver_gt` |
+| `util_` | `util_resolve_storage` (wired from `main_certbot_nginx_app` / `show_nginx_system_diagnostics`) |
+| `prompt_` | `prompt_yes_no`, `prompt_ask` |
+| Dispatcher / CLI surface | `main_certbot_nginx_app`, `show_certbot_nginx_help`, `show_nginx_system_diagnostics` |
+| PATH | `add_to_shell_path` |
+| Domain | `run_interactive_setup`, `run_non_interactive_setup`, `create_nginx_adm_user`, `create_cloudflare_map`, `create_per_domain_server_blocks`, `deploy_domain_nginx_configs`, … |
 
 #### Structural notes (implementation status)
 
 | Issue | Status |
 |-------|--------|
-| Duplicate `inst_perform_install_prepare_target` | **Fixed** — single definition (2026-07-12) |
-| Nested `get_current_shell` | **Fixed** — top-level `util_get_current_shell` |
-| Thin wrappers (`out_success`, …) | **Allowed** — delegate to `out_text` SSOT |
-| Partial headers on some helpers | Improve when those helpers are touched (ongoing surgical standard) |
+| Bootstrap `out_*`/`inst_*`/`app_*` names | **Not used** — ship family above is SSOT |
+| Thin wrappers (`info`, …) | **Allowed** — delegate to `output_text` |
+| Partial headers on some helpers | Improve when those helpers are touched |
 
 #### New function checklist (this project)
 

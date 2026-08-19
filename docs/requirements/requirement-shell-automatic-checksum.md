@@ -78,7 +78,7 @@ Automatic integrity **MUST NOT** be silent magic. In **human / normal** mode, th
 
 | Requirement | Meaning |
 |-------------|---------|
-| **Runtime / install-path variable** | `CHECKSUM` is an **optional** shell/env variable read **only** by the install/download verify path (e.g. `inst_perform_install*`). Empty default. |
+| **Runtime / install-path variable** | `CHECKSUM` is an **optional** shell/env variable read **only** by the install/download verify path (e.g. `perform_self_install_v2`). Empty default. |
 | **When set** | Download must match the pin exactly; mismatch aborts. |
 | **Outside payload** | Pin is env/operator/CI for that process — **MUST NOT** be embedded inside `./certbot-nginx` as a self-hash of that file. |
 | **Not a help/about surface** | **`help` and `about` MUST NOT list, print, or advertise `CHECKSUM`** (name, value, or “optional pin” line). Avoids operators treating it as a required public setting. |
@@ -115,18 +115,18 @@ When this requirement is **Active** for the product:
 | **Optional Shape B** | Env pin (`CHECKSUM` non-empty) is **opt-in secondary** for CI/out-of-band freeze only — never primary one-liner UX; never listed in `help` / `about` |
 | **Product / binary** | `certbot-nginx` (`APP_NAME`) |
 | **Implementation file** | Repo root `./certbot-nginx` |
-| **Orchestrator** | `inst_perform_install` |
-| **Automatic download helper** | `inst_perform_install_download_without_checksum` (name = without **env** pin; still performs companion verify) |
-| **Strict pin helper** | `inst_perform_install_download_with_checksum` when runtime `CHECKSUM` non-empty (not shown in help/about) |
-| **Atomic install** | `inst_perform_install_atomic_install` |
+| **Orchestrator** | `perform_self_install_v2` (companion + pin + atomic replace live in this one function) |
+| **Automatic companion path** | `CHECKSUM` unset branch inside `perform_self_install_v2` |
+| **Strict pin path** | `CHECKSUM` non-empty branch inside `perform_self_install_v2` (not shown in help/about) |
+| **Atomic install** | same function (temp file + install to `INSTALL_PATH`) |
 | **Channel SSOT** | `SCRIPT_URL` default `https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}` → `https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx` |
 | **Companion URL** | `${SCRIPT_URL}.sha256` → `https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx.sha256` |
 | **In-repo companion** | `certbot-nginx.sha256` (bare 64-char hex) |
 | **Algorithm** | SHA-256 via `sha256sum` |
 | **Missing sidecar policy** | Warn + continue (best-effort) |
-| **Mismatch policy** | Abort (human `out_die` / JSON `checksum_mismatch`) |
-| **Self-update** | `inst_self_update` → `inst_perform_install` (same integrity path) |
-| **Output SSOT** | `out_info` / `out_success` / `out_warn` / `out_die` / `out_json_error` |
+| **Mismatch policy** | Abort (human `die` / JSON `checksum_mismatch`) |
+| **Self-update** | `self_update_v2` → `perform_self_install_v2` (same integrity path) |
+| **Output SSOT** | `info` / `success` / `warn` / `die` / `output_json_error` |
 
 #### Normative acceptance behaviors (this project)
 
@@ -141,14 +141,14 @@ When this requirement is **Active** for the product:
 
 | Item | Status |
 |------|--------|
-| Automatic fetch of `${SCRIPT_URL}.sha256` when pin unset | **Implemented** in `inst_perform_install_download_without_checksum` |
+| Automatic fetch of `${SCRIPT_URL}.sha256` when pin unset | **Implemented** in `perform_self_install_v2` |
 | Abort on mismatch | **Implemented** |
 | Warn + continue on missing sidecar | **Implemented** |
-| Show companion **link** in human mode | **Implemented** (2026-07-14) — `Companion link: ${SCRIPT_URL}.sha256` |
-| Show expected **value** and **result** (pass/fail with digests) | **Implemented** (2026-07-14) — Expected/Actual SHA-256 lines + `Automatic checksum result: PASS` (or mismatch abort with digests) |
-| `downloaded_checksum_ok` on automatic match | **Implemented** (2026-07-14) — `INST_AUTO_CHECKSUM_OK=1` on companion match; atomic install can report “cryptographically verified” |
+| Show companion **link** in human mode | **Implemented** — `Companion link: ${SCRIPT_URL}.sha256` |
+| Show expected **value** and **result** (pass/fail with digests) | **Implemented** — Expected/Actual SHA-256 lines + `Automatic checksum result: PASS` |
+| `downloaded_checksum_ok` / `AUTO_CHECKSUM_OK` on match | **Implemented** — local `downloaded_checksum_ok` plus `AUTO_CHECKSUM_OK=1` |
 | README leads with automatic mode | **Mostly present**; must not reintroduce env-first pin as primary (product root `README.md` integrity story) |
-| `help` / `about` omit `CHECKSUM` | **Implemented** in `app_help` (no Environment line); `app_about` never listed it |
+| `help` / `about` omit `CHECKSUM` | **Implemented** in `show_certbot_nginx_help` / `show_nginx_system_diagnostics` |
 | Same-origin CHECKSUM example as “highest assurance” | **Must not** — document as advanced/out-of-band only |
 
 ### 2.8 Why This Requirement Exists (Direct CIAO Alignment)

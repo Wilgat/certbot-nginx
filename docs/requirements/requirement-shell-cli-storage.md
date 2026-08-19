@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-This requirement is the **project Single Source of Truth** for **shell CLI storage resolution** of the certbot-nginx POSIX `/bin/sh` Type 0 CLI: volatile scratch and app-scoped cache path selection, per-user isolation, central resolver ownership, `app_main` wire, and about diagnostics.
+This requirement is the **project Single Source of Truth** for **shell CLI storage resolution** of the certbot-nginx POSIX `/bin/sh` Type 0 CLI: volatile scratch and app-scoped cache path selection, per-user isolation, central resolver ownership, `main_certbot_nginx_app` wire, and about diagnostics.
 
 **Scope:** Resolve priority chain; isolation; `util_resolve_storage` contract; `EFFECTIVE_STORAGE_DIR` / `TMPDIR` export; about human + JSON fields.  
 **Out of scope (cited, not re-owned):** Binary install paths (`USER_BIN` / `GLOBAL_BIN`); domain host paths (Nginx site trees, Let's Encrypt live certs/keys, nginx-adm home) — those stay under domain / OS layout, not this scratch resolver; companion checksum; PATH shell-rc.
@@ -21,7 +21,7 @@ This requirement is the **project Single Source of Truth** for **shell CLI stora
 1. **MUST** keep **one** authoritative storage-resolve helper: **`util_resolve_storage`**.  
 2. New code that needs a product scratch/cache **root** **MUST** call `util_resolve_storage` (or `mktemp` under a path it returned) — **MUST NOT** introduce parallel hard-coded `/tmp/certbot-nginx` dumps.  
 3. Resolver **MUST** print the chosen directory path on **stdout** for `$(util_resolve_storage)` capture (data return — not product UI).  
-4. User-visible failure about storage **MUST** use Output SSOT (`out_die` / structured error as mode requires).
+4. User-visible failure about storage **MUST** use Output SSOT (`die` / structured error as mode requires).
 
 ### 2.2 Live resolve priority (normative for this product)
 
@@ -33,7 +33,7 @@ First match that is available and writable:
 | 2 | `/tmp` is writable | `/tmp/${APP_NAME}-${USERNAME}` |
 | 3 | Fallback | `STORAGE_DIR` (`${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}`, env-overridable) |
 
-**Create before return:** for the **chosen** tier, the resolver **MUST** `mkdir -p` the root (all tiers), then print the path. If create fails → **MUST** fail closed via `out_die`. **MUST NOT** return a path without creating it.
+**Create before return:** for the **chosen** tier, the resolver **MUST** `mkdir -p` the root (all tiers), then print the path. If create fails → **MUST** fail closed via `die`. **MUST NOT** return a path without creating it.
 
 ### 2.3 Isolation
 
@@ -45,9 +45,9 @@ First match that is available and writable:
 
 | Surface | Requirement |
 |---------|-------------|
-| `app_main` | Resolve once early: `EFFECTIVE_STORAGE_DIR=$(util_resolve_storage)`; export `EFFECTIVE_STORAGE_DIR`, `STORAGE_DIR`, `TMPDIR` |
-| `app_about` JSON | Include `effective_storage` and `storage_dir` (no CHECKSUM) |
-| `app_about` human | Show effective storage (and config fallback field) |
+| `main_certbot_nginx_app` | Resolve once early: `EFFECTIVE_STORAGE_DIR=$(util_resolve_storage)`; export `EFFECTIVE_STORAGE_DIR`, `STORAGE_DIR`, `TMPDIR` |
+| `show_nginx_system_diagnostics` JSON | Include `effective_storage` and `storage_dir` (no CHECKSUM) |
+| `show_nginx_system_diagnostics` human | Show effective storage (and config fallback field) |
 
 ### 2.5 Implementation Notes (this project)
 
@@ -56,9 +56,9 @@ First match that is available and writable:
 | **Product / binary** | `certbot-nginx` |
 | **Resolver** | `util_resolve_storage` in `./certbot-nginx` |
 | **Config fallback** | `: "${STORAGE_DIR:=${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}}"` |
-| **Call sites** | `app_main` (resolve + TMPDIR); `app_about` (human + JSON) |
+| **Call sites** | `main_certbot_nginx_app` (resolve + TMPDIR); `show_nginx_system_diagnostics` (human + JSON) |
 | **Not used for** | Nginx site configs, Let's Encrypt live material, or other host-mutating domain trees — those are domain/OS paths (`requirement-domain-certbot-nginx.md`), not Type 0 scratch/cache |
-| **Tests** | `tests/test_cli.sh` — about storage fields, isolation, dir exists, STORAGE_DIR override on fallback field |
+| **Tests** | `tests/test_cli.sh` — about JSON `effective_storage` / `storage_dir` |
 
 ### 2.6 Why This Requirement Exists (CIAO)
 
@@ -101,9 +101,9 @@ Storage resolve work for certbot-nginx is **not done** if any of the following f
 1. Exactly one authoritative resolver (`util_resolve_storage`) returns the chosen path on stdout after `mkdir -p` of that root.  
 2. Resolve priority matches this requirement (writable `/dev/shm` → `/tmp` → `STORAGE_DIR` fallback).  
 3. Paths include `${APP_NAME}` and `${USERNAME}` isolation; no shared world-writable single dump for all users.  
-4. `app_main` sets `EFFECTIVE_STORAGE_DIR` / exports `TMPDIR` from the resolver once early.  
-5. `app_about` human + JSON expose effective storage fields and **omit** `CHECKSUM`.  
-6. User-visible storage failures use Output SSOT (`out_die` / structured error).  
+4. `main_certbot_nginx_app` sets `EFFECTIVE_STORAGE_DIR` / exports `TMPDIR` from the resolver once early.  
+5. `show_nginx_system_diagnostics` human + JSON expose effective storage fields and **omit** `CHECKSUM`.  
+6. User-visible storage failures use Output SSOT (`die` / structured error).  
 7. Tests cover about storage fields / isolation / override as designed (`tests/test_cli.sh`).  
 8. Implementation changes cite this requirement key `requirement-shell-cli-storage`.
 
@@ -115,7 +115,7 @@ Storage resolve work for certbot-nginx is **not done** if any of the following f
 |----------|------|
 | `docs/requirements/index.md` | Registry SSOT |
 | `docs/requirements/requirement-shell-modular-function-design.md` | `util_*` ownership |
-| `docs/requirements/requirement-shell-output-requirements.md` | about JSON via `out_json` |
+| `docs/requirements/requirement-shell-output-requirements.md` | about JSON via `output_json` |
 | `docs/requirements/requirement-shell-self-management.md` | about lifecycle |
 | `./certbot-nginx` | Implementation under test |
 | `tests/test_cli.sh` | Storage diagnostics tests |

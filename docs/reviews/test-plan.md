@@ -24,7 +24,7 @@ Runner: `./tests/run.sh`
 | **TP-CLI-02** | version human + JSON | **have** | `test_cli.sh` |
 | **TP-CLI-03** | help Type 0 + domain; no CHECKSUM; no foreign DNA | **have** | `test_cli.sh` |
 | **TP-CLI-04** | help/about JSON purity | **have** | `test_cli.sh` |
-| **TP-CLI-05** | shell storage about fields | **n/a** | product has no util_resolve_storage (CNX-REQ-01) |
+| **TP-CLI-05** | shell storage about fields | **have** | `test_cli.sh` about JSON `effective_storage` / `storage_dir` |
 | **TP-CLI-06** | unknown command + JSON error | **have** | `test_cli.sh` |
 | **TP-CLI-07** | quiet / `-q` | **have** | `test_cli.sh` |
 | **TP-CLI-08** | `env -u HOME` | **have** | `test_cli.sh` |
@@ -42,7 +42,7 @@ Runner: `./tests/run.sh`
 | **TP-LC-05** | self-update already-latest | **have** | lifecycle |
 | **TP-LC-06** | force reinstall companion transparency | **have** | with TP-CSUM-02 |
 | **TP-LC-07** | uninstall refuse / force | **have** | lifecycle |
-| **TP-LC-08** | downgrade refuse / force | **skip** | CNX-SM-02 Partial |
+| **TP-LC-08** | downgrade refuse / force | **todo** | Ship `ver_gt` in `self_update_v2`; Core suite does not yet fetch an older remote |
 | **TP-LC-09** | zero-arg fail loud | **have** | CLI |
 | **TP-LC-10** | idempotent re-install | **have** | lifecycle |
 | **TP-LC-12** | explicit `install --json` | **have** | lifecycle |

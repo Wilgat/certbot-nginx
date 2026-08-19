@@ -1,6 +1,6 @@
 **file**: docs/requirements/requirement-domain-certbot-nginx.md  
 **Requirement-ID**: `RQ-DOMAIN-CERTBOT-NGINX`  
-**Status**: Active (Version 1.1.0 – elev model + webserver/ssl notes)  
+**Status**: Active (Version 1.1.1 – elev model + webserver/ssl + RQ-NGINX-CONF term alignment pointers)  
 **Area**: domain  
 **Key**: `requirement-domain-certbot-nginx`  
 **Philosophy**: CIAO **v2.10.2** / CIAO-Lite (Caution • Intentional • Anti-fragile • Over-engineered / Over-protect)
@@ -46,7 +46,7 @@ Domain law **MUST** define (when claimed):
 | Main domain / CN | User-chosen primary domain becomes certificate CN; SAN list ordered accordingly |
 | Persistence | Email and domains stored under `/etc/letsencrypt/` with defensive re-create of missing placeholders |
 | Cloudflare origin | Default enable Cloudflare-only origin protection; disable with `--no-cloudflare` |
-| Least privilege | Dedicated **nginx-adm** user owns nginx conf tree; restricted sudoers for nginx service only |
+| Least privilege | Dedicated **nginx-adm** (term **nginx-adm**) owns nginx conf tree; elev **nginx-sudoers**; control surface **nginx-ctl** — not content docroot owner by default |
 | Backups | Dated backups of nginx site configs before destructive config writes |
 | Sequence | Packages → stop nginx early → email/domains → obtain certs → deploy configs → test/start |
 | Host-mutating privilege | Verbs `setup` / `run` / `nginx-conf` **MUST** call root gate on **every** path (interactive, non-interactive, JSON) **before** first host write; non-root → non-zero, **no partial host mutation**; empty argv is Type O only (not host setup) |
@@ -101,12 +101,13 @@ Domain law **MUST** define (when claimed):
 | **Main domain** | Interactive confirmation of primary CN; file-backed domain list |
 | **Email** | Collected independently; persisted under Let's Encrypt tree |
 | **Cloudflare** | Default `USE_CLOUDFLARE=1`; official CF IP ranges + deny non-CF; `--no-cloudflare` opt-out |
-| **nginx-adm** | Create least-privilege user; own conf tree; restricted sudoers (nginx systemctl only); `nginx -t` as nginx-adm |
+| **nginx-adm** | Create least-privilege user; own conf tree; restricted sudoers (nginx systemctl only); `nginx -t` as nginx-adm — surface posture term **nginx-least-privilege-model**; host check **`SK-CHECK-NGINX-LEAST-PRIVILEGE`** |
 | **Backups** | Dated `.YYYYMMDD-N.bak` style backups before site config rewrite |
 | **Syntax validate before reload** | After writing or enabling site configs, **MUST** run `nginx -t` (or equivalent config test) **before** `reload` / `restart` / `start` that applies the new configs; fail closed on test failure (keep prior enabled set when designed) |
 | **Certificate storage** | Live certs/keys under system Let's Encrypt layout (e.g. `/etc/letsencrypt/…`); **MUST NOT** copy private keys into world-readable product scratch or `util_resolve_storage` trees; permissions remain Certbot/OS defaults unless a specialized hardening REQ is added |
 | **Certificate renewal** | Rely on **Certbot renew** / platform timer or documented operator renew path; product **MUST NOT** claim silent zero-downtime multi-node orchestration; re-run `nginx-conf` / setup paths **MUST** remain safe after renew when cert paths unchanged (idempotent conf deploy) |
 | **External webserver posture** | Production path is **system Nginx** managed via configs + nginx-adm — not an embedded app-only listener as the primary product mode |
+| **Nginx conf structure** | Peer **`RQ-NGINX-CONF`**: three **nginx-conf** artifact types; type-2 basename **`{{domain-name}}.conf`**; location roles; **nginx-domain-root** path/ownership (default `/var/www/{{domain-name}}`, www-data:www-data; frequent-change symlink layout) — **not** duplicated here |
 | **Platforms** | Primary Linux (Debian/Ubuntu, Alpine, RHEL family); macOS best-effort install only |
 
 #### Specialized project help items (certbot-nginx)
@@ -136,6 +137,9 @@ Domain law **MUST** define (when claimed):
 | Automated domain tests suite | Not yet present under `tests/` — gap for future `skill-add-tests` |
 | Dedicated renew verb | No product-owned `renew` subcommand required; operator/Certbot renew is the intended path unless a future REQ adds one |
 | Multi-node zero-downtime | **Out of scope** — single-host setup product |
+| Type-3 redirect writer | Taxonomy + host common; product generator may lag — see **`RQ-NGINX-CONF`** honesty |
+| Open CF conf body vs flag | Flag/messaging exist; generator gate may still emit — see **`RQ-NGINX-CONF`** §2.4 |
+| Term↔REQ vocabulary | Conf structure terms owned by **`RQ-NGINX-CONF`** §2.0 map; domain SSOT uses **nginx-adm** / **nginx-sudoers** / **nginx-ctl** keys |
 
 ### 2.7 Why This Requirement Exists (Direct CIAO Alignment)
 
@@ -182,6 +186,10 @@ Domain law **MUST** define (when claimed):
 |----------|------|
 | `docs/requirements/index.md` | Registry SSOT |
 | `docs/requirements/requirement-class-software-dev.md` | Class gate |
+| `docs/requirements/requirement-nginx-conf.md` / **`RQ-NGINX-CONF`** | Conf artifacts, naming, location roles, **nginx-domain-root** defaults (term-aligned §2.0) |
+| Portable mold **LM-NGINX-CONF-STRUCTURE** | Conf structure mold (not ship authority) |
+| Blank gate **CL-NGINX-CONF-STRUCTURE** | Structure + naming + ownership audit form |
+| Glossary (selected keys) | **nginx** · **nginx-conf** · **nginx-conf-*** · **nginx-domain-root** · **nginx-adm** · **nginx-sudoers** · **nginx-ctl** |
 | `docs/requirements/requirement-bootstrap-chain.md` | Lineage A→B |
 | `docs/requirements/requirement-shell-cli-interface.md` | Type 0 + dispatch peers |
 | `docs/requirements/requirement-shell-cli-zero-arguments.md` | Empty argv Type O |

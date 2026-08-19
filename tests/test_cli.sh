@@ -74,6 +74,8 @@ run_test_cli() {
     assert_not_contains "TP-CSUM-05 about --json no CHECKSUM" "$_out" "CHECKSUM"
     # domain about extras allowed
     assert_contains "TP-CNX-01 about nginx platform field" "$_out" "nginx_platform"
+    assert_contains "TP-CLI-05 about effective_storage" "$_out" "effective_storage"
+    assert_contains "TP-CLI-05 about storage_dir" "$_out" "storage_dir"
 
     # TP-CLI-06 unknown
     _err=$(sh "${SCRIPT}" no-such-command 2>&1 >/dev/null)

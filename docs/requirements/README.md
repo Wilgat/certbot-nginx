@@ -2,7 +2,7 @@
 
 Authoritative specialized product law for **certbot-nginx** after specialization from bootstrap **selfmanaged**.
 
-**Current state (2026-08-12):** Active software-development class, Type 0 shell requirements, domain SSOT (`requirement-domain-certbot-nginx`), and bootstrap chain. Registry: `index.md`.
+**Current state (2026-08-12):** Active software-development class, Type 0 shell requirements, domain SSOT (`requirement-domain-certbot-nginx`), webserver conf peer (`requirement-nginx-conf` / **`RQ-NGINX-CONF`**), and bootstrap chain. Registry: `index.md` (**13** Active rows).
 
 ## Class gate
 

@@ -45,18 +45,18 @@ Empty argv means **install-ensure** for three detect cases:
 |------|----------------------------|
 | **Type O** | Online-install empty-argv product type: empty argv = install-ensure (this product). |
 | **Type N** | Non-online-install empty-argv type: empty argv = help — **out of scope** for certbot-nginx. |
-| **Empty argv / zero-arg** | `$# -eq 0` at entry to `app_main` (no command tokens; classic `curl \| sh` with no trailing args). |
+| **Empty argv / zero-arg** | `$# -eq 0` at entry to `main_certbot_nginx_app` (no command tokens; classic `curl \| sh` with no trailing args). |
 | **Install-ensure** | Converge to “managed `certbot-nginx` binary present”; either perform install or success no-op. |
-| **Not installed** | `inst_is_installed` returns false (`inst_get_version` → `not installed`). |
+| **Not installed** | `is_installed` returns false (`get_installed_version` → `not installed`). |
 | **Installed (local)** | Executable at `${USER_BIN}/certbot-nginx` (default `USER_BIN=${HOME}/.local/bin`) observed by install-detect SSOT. |
 | **Installed (global)** | Executable at `${GLOBAL_BIN}/certbot-nginx` (default `GLOBAL_BIN=/usr/local/bin`) observed by install-detect SSOT. |
-| **Force / reinstall** | `FORCE_REINSTALL=1` from `--force` (and related force wiring in `app_main`). Required only for deliberate replace, not for ensure. |
+| **Force / reinstall** | `FORCE_REINSTALL=1` from `--force` (and related force wiring in `main_certbot_nginx_app`). Required only for deliberate replace, not for ensure. |
 
 ### 2.2 Single meaning of empty argv
 
-1. When **argv is empty**, `app_main` **MUST** run **install-ensure** — **MUST NOT** route to `app_help` / default `COMMAND=help`.  
+1. When **argv is empty**, `main_certbot_nginx_app` **MUST** run **install-ensure** — **MUST NOT** route to `show_certbot_nginx_help` / default `COMMAND=help`.  
 2. Explicit `certbot-nginx help` remains the only full-usage path for help text.  
-3. Bootstrap **MUST** always call `app_main "$@"` so pipe one-liners reach this contract (no `${0##*/}` product-name gate).  
+3. Bootstrap **MUST** always call `main_certbot_nginx_app "$@"` so pipe one-liners reach this contract (no `${0##*/}` product-name gate).  
 4. Empty argv **MUST NOT** require the user to pass `install` or `install --force` merely because a previous ensure already succeeded.
 
 ### 2.2.1 Specializee contract (bootstrap origin → specialized B)
@@ -75,25 +75,25 @@ When this product is used as **bootstrap origin A** for a specialized product **
 
 | Case | Detect condition (project) | Empty argv, `FORCE_REINSTALL=0` | Empty argv / install with force |
 |------|----------------------------|--------------------------------|---------------------------------|
-| **A. Not installed** | `inst_is_installed` false | Install into privilege-correct path (§2.4) | Same first-time install |
-| **B. Installed — local** | User binary present via detect SSOT | Success no-op: already installed; no re-download; **no help** | `inst_perform_install` re-download/replace (user path when non-root) |
+| **A. Not installed** | `is_installed` false | Install into privilege-correct path (§2.4) | Same first-time install |
+| **B. Installed — local** | User binary present via detect SSOT | Success no-op: already installed; no re-download; **no help** | `perform_self_install_v2` re-download/replace (user path when non-root) |
 | **C. Installed — global** | Global binary present via detect SSOT | Success no-op: already installed; no re-download; **no help** | Re-download/replace (global path when root / global binary policy) |
 
 **Already-installed rules (Cases B and C, force off):**
 
 1. Exit status **MUST** be `0`.  
-2. Human mode **MUST** use `out_success` with an **already installed** message (via `inst_perform_install` no-op path).  
-3. Human mode **MAY** add `out_info` tips that `--force` / `self-update` are for **deliberate** reinstall or upgrade — **MUST NOT** imply force is required for a normal one-liner re-run.  
-4. JSON mode **MUST** use structured success (`out_json` success type) with already-installed message — **MUST NOT** emit help JSON.  
-5. Detect **MUST** treat either global or local managed binary as installed when that is how `inst_is_installed` / `inst_get_version` resolve paths (project SSOT today prefers global when executable there, else user path).
+2. Human mode **MUST** use `success` with an **already installed** message (Type O no-op path).  
+3. Human mode **MAY** add `info` tips that `--force` / `self-update` are for **deliberate** reinstall or upgrade — **MUST NOT** imply force is required for a normal one-liner re-run.  
+4. JSON mode **MUST** use structured success (`output_json` success type) with already-installed message — **MUST NOT** emit help JSON.  
+5. Detect **MUST** treat either global or local managed binary as installed when that is how `is_installed` / `get_installed_version` resolve paths (project SSOT today prefers global when executable there, else user path).
 
 ### 2.4 Case A — not installed (modes)
 
 | Mode | Required empty-argv behavior |
 |------|------------------------------|
-| **Interactive** (TTY stdin+stdout, not quiet/json) | `inst_maybe_install`: note + `prompt_yes_no`; yes → `inst_perform_install`; no → skip without help dump |
-| **Non-interactive** (non-TTY / `curl \| sh`) | Auto-install message + `inst_perform_install` (via `inst_maybe_install` non-TTY branch) |
-| **Quiet or JSON** | `inst_perform_install` directly (no prompt) |
+| **Interactive** (TTY stdin+stdout, not quiet/json) | `maybe_install_v2`: note + `prompt_yes_no`; yes → `perform_self_install_v2`; no → skip without help dump |
+| **Non-interactive** (non-TTY / `curl \| sh`) | Auto-install message + `perform_self_install_v2` (via `maybe_install_v2` non-TTY branch) |
+| **Quiet or JSON** | `perform_self_install_v2` directly (no prompt) |
 | **Failure** (network, checksum, I/O) | Non-zero exit; no fake success; no help-only output |
 
 **Placement privilege:**
@@ -119,7 +119,7 @@ When this product is used as **bootstrap origin A** for a specialized product **
 3. Require `--force` solely because detect says installed.  
 4. Blind re-download every empty-argv run without force.  
 5. Basename-gate main so `curl \| sh` never hits the empty-argv branch.  
-6. Detect only one of global/local incorrectly so a present local install is treated as Case A (or the reverse) contrary to `inst_*` SSOT.
+6. Detect only one of global/local incorrectly so a present local install is treated as Case A (or the reverse) contrary to `is_installed` SSOT.
 
 ### 2.7 Implementation Notes (this project)
 
@@ -128,47 +128,46 @@ When this product is used as **bootstrap origin A** for a specialized product **
 | **Empty-argv type** | **Type O — Online-install** (install-ensure; not Type N help-default) |
 | **Product / binary** | `certbot-nginx` (`APP_NAME`) |
 | **Ship unit** | Repo root `./certbot-nginx` |
-| **Dispatcher** | `app_main` — empty-argv block **before** flag/command parse default help |
-| **Install ensure** | `inst_perform_install` (quiet/json and already-installed no-op) |
-| **Friendly first install** | `inst_maybe_install` (TTY confirm / non-TTY auto) when not installed and not quiet/json |
-| **Detect SSOT** | `inst_is_installed` ← `inst_get_version` |
+| **Dispatcher** | `main_certbot_nginx_app` — empty-argv block **before** flag/command parse default help |
+| **Install ensure** | `perform_self_install_v2` (quiet/json); already-installed no-op in the empty-argv block |
+| **Friendly first install** | `maybe_install_v2` (TTY confirm / non-TTY auto) when not installed and not quiet/json |
+| **Detect SSOT** | `is_installed` ← `get_installed_version` |
 | **Global path** | `GLOBAL_BIN` default `/usr/local/bin` |
 | **Local path** | `USER_BIN` default `${HOME}/.local/bin` |
-| **Force wiring** | `--force` → `FORCE=1` and `FORCE_REINSTALL=1` in `app_main` |
-| **Output SSOT** | `out_success` / `out_info` / `out_json` / errors via `out_*` |
+| **Force wiring** | `--force` → `FORCE_REINSTALL=1` in `main_certbot_nginx_app` |
+| **Output SSOT** | `success` / `info` / `output_json` / errors via `die` |
 | **Channel** | `SCRIPT_URL` (compose from `REPO_USER` / `REPO_NAME` / `APP_NAME`) for download path inside install |
 | **Tests** | `tests/test_cli.sh` (Case A failure when not installed); `tests/test_install_lifecycle.sh` (Case B local + Case C global already-installed → not help) |
 
 #### Dispatcher algorithm (normative sketch)
 
 ```text
-app_main:
+main_certbot_nginx_app:
   if [ $# -eq 0 ]; then
+    if is_installed and not FORCE_REINSTALL:
+      success no-op (hint: sudo ${APP_NAME} setup); exit 0
     if JSON or QUIET:
-      inst_perform_install; exit $?
-    elif inst_is_installed:
-      inst_perform_install   # Case B/C success no-op
-      exit $?
+      perform_self_install_v2; exit $?
     else
-      inst_maybe_install     # Case A
+      maybe_install_v2     # Case A (TTY prompt / non-TTY auto)
       exit $?
     fi
   fi
-  # else parse flags/commands; default COMMAND=help only when argv non-empty and command is help/absent token rules
+  # else parse flags/commands
 ```
 
 #### Message contract (already installed, human)
 
-- Success: `${APP_NAME} is already installed.` (or equivalent via `out_success`)  
-- Optional info: force / `self-update` only for deliberate reinstall or upgrade  
-- **MUST NOT** print the full `app_help` usage body on this path
+- Success: already-installed Type O no-op (via `success`)  
+- Optional info: `sudo ${APP_NAME} setup` for domain host work  
+- **MUST NOT** print the full `show_certbot_nginx_help` usage body on this path
 
 ### 2.8 Why This Requirement Exists (Direct CIAO Alignment)
 
 - **CIAO Principle 1 – Caution** (https://github.com/cloudgen/ciao): One-liner re-runs must not look like broken install or force unnecessary reinstall.  
 - **CIAO Principle 2 – Intentional** (https://github.com/cloudgen/ciao): Empty argv has one meaning for not-installed, local, and global.  
 - **CIAO Principle 3 – Anti-fragile** (https://github.com/cloudgen/ciao): Dual install paths + `curl \| sh` + TTY.  
-- **CIAO Principle 6 – Single Point of Entry** (https://github.com/cloudgen/ciao): `app_main` owns empty-argv before help default.  
+- **CIAO Principle 6 – Single Point of Entry** (https://github.com/cloudgen/ciao): `main_certbot_nginx_app` owns empty-argv before help default.  
 - **CIAO Principle 16 – Interactive vs Non-Interactive** (https://github.com/cloudgen/ciao): Case A auto under pipe; optional TTY confirm.  
 - **CIAO Principle 4 (O) / Principle 20 – Over-protect / Protect Against AI & Human Modification** (https://github.com/cloudgen/ciao): Protection Rule against help-fallback regression.
 
@@ -180,7 +179,7 @@ app_main:
 - **Intentional:** Help is never the empty-argv default for this install CLI.  
 - **Anti-fragile:** Global and local detect; idempotent second one-liner.  
 - **Over-protect:** Do not “simplify” empty-argv back to `COMMAND:=help` after first install.  
-- **SSOT:** `inst_is_installed` / `inst_perform_install` / `inst_maybe_install` / `out_*`.  
+- **SSOT:** `is_installed` / `perform_self_install_v2` / `maybe_install_v2` / `success` / `info`.  
 - **Idempotent ensure:** Case B/C force off → already installed, exit 0.
 
 ---
@@ -189,13 +188,13 @@ app_main:
 
 **Future AI assistants, Grok, or maintainers MUST NOT**:
 
-1. Route empty argv to `app_help` when Case B or C applies (or when Case A should install).  
+1. Route empty argv to `show_certbot_nginx_help` when Case B or C applies (or when Case A should install).  
 2. Require `--force` for a healthy already-installed empty-argv re-run (local or global).  
 3. Handle only Case A and leave B/C as accidental help fallthrough.  
 4. Break dual-path detect so local or global installs are misclassified.  
 5. Blindly reinstall on every empty-argv run without `FORCE_REINSTALL`.  
 6. Exit 0 with no install and no already-installed acknowledgment when detect says installed.  
-7. Reintroduce a basename-only gate that skips `app_main` under `curl \| sh`.  
+7. Reintroduce a basename-only gate that skips `main_certbot_nginx_app` under `curl \| sh`.  
 8. Bypass `out_*` for empty-argv user messages.  
 9. Contradict this file in peer requirements by documenting “already installed → help” as normative empty-argv behavior.
 
@@ -228,7 +227,7 @@ This requirement is satisfied when all of the following hold:
 | `docs/requirements/requirement-shell-self-management.md` | self-update / uninstall (not empty-argv default) |
 | `docs/requirements/requirement-shell-output-requirements.md` | out_* / JSON purity |
 | `docs/requirements/requirement-shell-automatic-checksum.md` | Integrity on install download path |
-| Repo root `./certbot-nginx` | Implementation (`app_main`, `inst_*`) |
+| Repo root `./certbot-nginx` | Implementation (`main_certbot_nginx_app`, `perform_self_install_v2`, `maybe_install_v2`) |
 | `tests/test_cli.sh`, `tests/test_install_lifecycle.sh` | Regression coverage |
 
 ---

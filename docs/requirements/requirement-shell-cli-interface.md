@@ -111,7 +111,7 @@ When specializing product **B** from this bootstrap (**A → B only**):
 | **Primary executable** | Repo root `./certbot-nginx` (POSIX `/bin/sh`, single-file for `curl \| sh`) |
 | **Dispatcher** | `main_certbot_nginx_app` (always invoked at end of script — no `${0##*/}` / APP_NAME basename gate; required for `curl \| sh`) |
 | **Output SSOT** | Centralized helpers: `info` / `success` / `warn` / `error` / `msg` / `output_json` / `output_json_error` (naming differs from pure bootstrap `out_*`; same single-output intent) |
-| **Version SSOT** | `VERSION` default `1.16.0` (script header / config block: `VERSION="1.16.0"`) |
+| **Version SSOT** | `VERSION` default `1.16.3` (script header / config block: `VERSION="1.16.3"`) |
 | **Install paths** | Global: `GLOBAL_BIN` default `/usr/local/bin`; User: `USER_BIN` default `${HOME}/.local/bin` |
 | **Remote channel env (help surface)** | `REPO_USER` / `REPO_NAME` (defaults `Wilgat` / `certbot-nginx`); `SCRIPT_URL` composed default (literal: `https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx`). **`help` / `about` MUST NOT list `CHECKSUM`** |
 | **Type 1 / Type 2 commands** | Domain `setup` is privileged host mutation (root); Type 0 CLI lifecycle is invoker-scoped |

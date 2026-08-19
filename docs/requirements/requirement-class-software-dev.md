@@ -85,7 +85,7 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 | **Architectures supported** | any arch with a POSIX sh and the external tools the script invokes (no arch-specific binary) |
 | **Git surface** | used for product publish (`github.com/Wilgat/certbot-nginx`) |
 | **Ship unit / install** | yes — repo root `./certbot-nginx` + companion `certbot-nginx.sha256`; Type 0 online install (peer shell REQs) |
-| **Product version SSOT** | `VERSION="…"` hard-assign in `./certbot-nginx` (currently `1.16.0`) |
+| **Product version SSOT** | `VERSION="…"` hard-assign in `./certbot-nginx` (currently `1.16.3`) |
 | **Domain SSOT** | `requirement-domain-certbot-nginx` — Nginx/Certbot/Cloudflare/nginx-adm beyond Type 0 |
 | **Bootstrap origin** | `selfmanaged` (see `requirement-bootstrap-chain`) |
 

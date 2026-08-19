@@ -109,13 +109,13 @@ Root may write global install path; non-root uses user path. Do not assume root 
 | **Paths** | `GLOBAL_BIN` default `/usr/local/bin`; `USER_BIN` default `${HOME}/.local/bin` |
 | **Repository identity** | `REPO_USER` default `Wilgat`; `REPO_NAME` default `certbot-nginx` |
 | **Release channel** | `SCRIPT_URL` Config default composed as `https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}` (this project: `https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx` — product channel SSOT; override `SCRIPT_URL` or `REPO_*` via env if needed) |
-| **Strict digest pin** | Runtime `CHECKSUM` when set in process env → `inst_perform_install_download_with_checksum` (secondary install-path only; **not** shown in `help`/`about`; see automatic-checksum requirement) |
-| **Companion digest** | Default `${SCRIPT_URL}.sha256` via `inst_perform_install_download_without_checksum` — law + transparency: `requirement-shell-automatic-checksum.md` |
+| **Strict digest pin** | Runtime `CHECKSUM` when set in process env → pin branch of `perform_self_install_v2` (secondary install-path only; **not** shown in `help`/`about`; see automatic-checksum requirement) |
+| **Companion digest** | Default `${SCRIPT_URL}.sha256` via automatic branch of `perform_self_install_v2` — law + transparency: `requirement-shell-automatic-checksum.md` |
 | **Force reinstall** | `FORCE_REINSTALL`; CLI `--force` required by CLI interface requirement |
-| **Uninstall steps** | `inst_self_uninstall_determine_bin` → `inst_self_uninstall_confirm_and_remove` → `inst_self_uninstall_cleanup_path` |
-| **PATH ensure** | `path_add_shell` / bash / zsh / fish helpers on user install |
+| **Uninstall steps** | `self_uninstall` (resolve binary → `prompt_yes_no` unless `--force` → remove) |
+| **PATH ensure** | `add_to_shell_path` on user install |
 | **Privilege** | Type 0 only for self-management surface; no dedicated system user |
-| **Version SSOT** | `VERSION` default `1.16.0` in script config block (`VERSION="1.16.0"`) |
+| **Version SSOT** | `VERSION` default `1.16.3` in script config block (`VERSION="1.16.3"`) |
 
 #### Normative acceptance behaviors (this project)
 
@@ -124,16 +124,16 @@ Root may write global install path; non-root uses user path. Do not assume root 
    - Fail if remote version cannot be fetched.  
    - If local equals remote and force off → success no-op (“already latest”).  
    - If remote is **older** than local and force off → **refuse** (no silent downgrade).  
-   - If remote is newer (or force policy allows reinstall) → set reinstall and call `inst_perform_install` with integrity + atomic replace.  
+   - If remote is newer (or force policy allows reinstall) → set reinstall and call `perform_self_install_v2` with integrity + atomic replace.  
 3. **`self-uninstall`:** Resolve binary; confirm when interactive and force off; remove only that binary; clean PATH only if `~/.local/bin` empty (non-root); never delete unrelated trees.  
 4. **`about`:** Human diagnostics + JSON about object; no secrets; **no `CHECKSUM` name/value**.  
-5. **Shared install path:** Self-update **must not** introduce a parallel curl-to-final-path overwrite outside `inst_perform_install*`.
+5. **Shared install path:** Self-update **must not** introduce a parallel curl-to-final-path overwrite outside `perform_self_install_v2`.
 
 #### Compliance notes (implementation status)
 
 | Item | Status |
 |------|--------|
-| Downgrade gate via `ver_gt` (refuse unless `--force`) | **Partial** — already-latest no-op present; full older-than-local refuse to strengthen |
+| Downgrade gate via `ver_gt` (refuse unless `--force`) | **Implemented** in `self_update_v2` (2026-08-18) |
 | CLI `--force` / `--reinstall` → `FORCE_REINSTALL` | **Implemented** in `main_certbot_nginx_app` |
 | `SCRIPT_URL` default channel URL | **This project:** non-empty product default composed from `REPO_USER` / `REPO_NAME` / `APP_NAME` (`https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx`); product README must show simple literal one-liner(s) from that SSOT; env may still override |
 
@@ -155,7 +155,7 @@ Root may write global install path; non-root uses user path. Do not assume root 
 - **Intentional:** One orchestrator for install and update; clear command separation.  
 - **Anti-fragile:** Works for root global and user local; idempotent no-ops when already good.  
 - **Over-protect:** Do not simplify away checksum layers, atomic move, or safe PATH cleanup.  
-- **SSOT:** Channel via `SCRIPT_URL`/Config; install via `inst_perform_install*`; output via `out_*`.  
+- **SSOT:** Channel via `SCRIPT_URL`/Config; install via `perform_self_install_v2`; output via `info`/`output_json`.  
 - **Idempotency:** Align with `requirement-shell-idempotency.md` for already-latest / already-uninstalled.  
 - **Respect old working logic:** Preserve Protection Zones on install and self-management helpers.
 
@@ -174,7 +174,7 @@ Root may write global install path; non-root uses user path. Do not assume root 
 7. Use raw user-facing `echo`/`printf` instead of the centralized output system.  
 8. Hard-code project secrets or private tokens into update URLs in the tree.  
 9. Require a dedicated system user solely for Type 0 CLI self-update without a specialized architecture requirement.  
-10. Invent a second update implementation path that bypasses `inst_perform_install*`.
+10. Invent a second update implementation path that bypasses `perform_self_install_v2`.
 
 **Self-management is critical for long-term maintainability of one-command shell CLIs. Violating this rule is a critical regression.**
 

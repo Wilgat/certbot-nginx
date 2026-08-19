@@ -121,59 +121,60 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 |------|------------------------|
 | **Product / binary** | `certbot-nginx` (`APP_NAME`) |
 | **Implementation file** | Repo root `./certbot-nginx` |
-| **Human SSOT** | `out_text` |
-| **JSON SSOT** | `out_json` / `out_json_error` |
-| **Mode flags** | `QUIET`, `JSON`, `DEBUG`, `TTY` (defaults `0` except TTY when stdin/stdout are TTYs) |
-| **Flag wiring** | `app_main`: `--quiet`/`-q` → `QUIET=1`; `--json` → `JSON=1` and `QUIET=1`; `--debug` → `DEBUG=1` |
-| **Color** | ANSI only when `TTY=1` and quiet/json off, inside `out_text` |
-| **Domain** | No separate product logger; lifecycle commands use the same `out_*` |
+| **Human SSOT** | `output_text` (wrappers: `info` / `success` / `warn` / `error` / `die` / `debug` / `msg` / `msg_n`) |
+| **JSON SSOT** | `output_json` / `output_json_error` |
+| **Mode flags** | `QUIET`, `JSON`, `DEBUG`, `TTY` (defaults `0` except `TTY=1` when stdin/stdout are TTYs) |
+| **Flag wiring** | `main_certbot_nginx_app`: `--quiet`/`-q` → `QUIET=1`; `--json` → `JSON=1` and `QUIET=1`; `--debug` → `DEBUG=1` |
+| **Color** | ANSI only when `TTY=1` and quiet/json off, inside `output_text` |
+| **Domain** | Same output family (`info` / `output_json`); no second logger |
 
-#### Live `out_*` inventory
+#### Live output inventory
 
 | Function | Role in `./certbot-nginx` |
 |----------|-------------------------|
-| `out_text` | Human SSOT; JSON short-circuit; quiet filter; channel by level |
-| `out_success` / `out_info` / `out_warn` / `out_error` | Level wrappers |
-| `out_die` | `out_json_error` then `out_error` then `exit 1` |
-| `out_plain` / `out_msg_n` | Plain / prompt fragment |
-| `out_empty_line` / `out_double_line` | Separators |
-| `out_json` | Structured success/status when `JSON=1` |
-| `out_json_error` | Structured error object (`type` + `message` + `code`) |
+| `output_text` | Human SSOT; JSON short-circuit; quiet filter; channel by level |
+| `success` / `info` / `warn` / `error` | Level wrappers |
+| `die` | `output_json_error` (when JSON) then `output_text error` then `exit 1` |
+| `debug` | `[DEBUG]` via warn path when `DEBUG=1`; no-op under JSON |
+| `msg` / `msg_n` | Plain / prompt fragment |
+| `empty_line` / `double_line` | Separators |
+| `output_json` | Structured success/status when `JSON=1` |
+| `output_json_error` | Structured error (`type=error` + `message` + `code`) |
 
-#### Channel map (this project, current `out_text`)
+#### Channel map (this project, current `output_text`)
 
 | Level | fd | Prefix |
 |-------|-----|--------|
-| `out_error` | stderr | `[ERROR]` |
-| `out_warn` | stderr | `[WARN]` |
-| `out_info` | stdout | `[INFO]` |
-| `out_success` | stdout | `[OK]` |
+| `error` | stderr | `[ERROR]` |
+| `warn` | stderr | `[WARN]` |
+| `info` | stdout | `[INFO]` |
+| `success` | stdout | `[OK]` |
 | `plain` / `plain_n` | stdout | (none) |
 
 #### JSON object shape (this project)
 
-`out_json` optional **raw nested JSON**: key prefixed with `@` (e.g. `@items`) inserts the value unquoted as JSON array/object. Default keys remain string-escaped.
+`output_json` optional **raw nested JSON**: key prefixed with `@` (e.g. `@items`) inserts the value unquoted as JSON array/object. Default keys remain string-escaped. Legacy key `timers` is also inserted raw.
 
 **Specializee note:** domain arrays/objects **MUST** use `@key` raw insertion (caller builds valid JSON). Stringifying a JSON array into a normal string field is an anti-pattern for machine consumers.
 
 ```sh
 # Example — domain list as JSON array (specializee), not a quoted string:
-# out_json "success" "" "count" "2" "@domains" '["a.example","b.example"]'
+# output_json "success" "" "count" "2" "@domains" '["a.example","b.example"]'
 ```
 
-`out_json` emits a single-line object:
+`output_json` emits a single-line object:
 
 - Required: `"type":"<type>"`  
 - Optional: `"message":"..."` (escaped)  
 - Optional key/value pairs: alternating arguments after type/message  
 
-`out_json_error` uses `type=out_error`, message, and `code` (default `unknown`).
+`output_json_error` uses `type=error`, message, and `code` (default `unknown_error`).
 
 #### Normative acceptance behaviors (this project)
 
 1. With `--json`, human install/about banners **must not** appear on stdout.  
-2. With `--json`, successful `version` / `about` / `version-check` / install success paths emit structured JSON via `out_json`.  
-3. Fatal unknown command uses `out_die` (structured error in JSON mode).  
+2. With `--json`, successful `version` / `about` / `version-check` / install success paths emit structured JSON via `output_json`.  
+3. Fatal unknown command uses `die` / `output_json_error` (structured error in JSON mode).  
 4. Quiet mode suppresses info/success/plain; errors still visible on stderr.  
 5. No new command may introduce raw `echo`/`printf` for **product user/machine messages** outside `out_*` (exceptions §2.1.1 only: SSOT internals, return-via-stdout, file I/O, tool pipes, command-sub fallbacks).
 
@@ -181,10 +182,11 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 
 | Item | Status |
 |------|--------|
-| Quiet keeps `out_warn` + `out_error` on stderr | **Implemented** in `out_text` (2026-07-12) |
-| JSON errors on stderr via `out_json_error` | **Implemented** (stdout remains success/status JSON only) |
-| `out_debug` on stderr when `DEBUG=1`, suppressed under JSON | **Implemented** |
-| Command paths use human **or** JSON via mode flags | **Enforced** (`out_text` no-ops when `JSON=1`) |
+| Quiet keeps `warn` + `error` on stderr | **Implemented** in `output_text` (2026-08-18) |
+| JSON errors via `output_json_error` | **Implemented** (`type=error`; stdout success/status JSON only when not fatal) |
+| `debug` when `DEBUG=1`, suppressed under JSON | **Implemented** (`--debug`) |
+| Command paths use human **or** JSON via mode flags | **Enforced** (`output_text` no-ops when `JSON=1`) |
+| `@key` raw JSON insertion | **Implemented** in `output_json` (legacy `timers` still raw) |
 
 ### 2.7 Why This Requirement Exists (Direct CIAO Alignment)
 

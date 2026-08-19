@@ -55,6 +55,10 @@ output/
 # --- Shell / local run debris ---
 *.YYYYMMDD-*.bak
 
+# --- Local harness-hop backups (H1/H2 fallback when global deposit unavailable) ---
+.h1-backup-*/
+.h2-backup-*/
+
 # --- Agent harness (root) — local only ---
 AGENTS.md
 CLAUDE.md

@@ -1,6 +1,6 @@
 # certbot-nginx
 
-[![Version](https://img.shields.io/badge/Version-1.16.1-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
+[![Version](https://img.shields.io/badge/Version-1.16.3-blue?style=flat-square)](https://github.com/Wilgat/certbot-nginx)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Philosophy](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()
@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-n
 ```bash
 # Optional strict pin (Shape B). Prefer automatic companion ${SCRIPT_URL}.sha256 when unset.
 # Refresh the hex from certbot-nginx.sha256 after each release if you pin.
-CHECKSUM=c8df3a31c6c1097fb318bd97c1f7dcedfa64773affec2a00855fb8e8f444ed4f \
+CHECKSUM=6e0ab361bda7dcc78e1b3fa13250461865100e08b87e500bb1775a86e4480189 \
   curl -fsSL https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx | sh
 ```
 
