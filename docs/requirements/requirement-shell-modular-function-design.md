@@ -16,6 +16,24 @@ It defines modular function organization for a **monolithic yet modular** single
 
 **Core idea:** Modularity is achieved through **clear function boundaries, consistent prefixes, and full CIAO documentation** — **not** by splitting the main CLI into multiple shipped files.
 
+### 1.1 Human-facing
+
+**In one sentence:** This program is one file, with named helper groups so cache and persistence resolvers stay under `util_` instead of scattered copies.
+
+| Box | Meaning | Example |
+|-----|---------|---------|
+| You | One program file you install | `./certbot-nginx` |
+| The other role | Helpers inside that file | `util_resolve_storage`, `util_resolve_persistent_storage` |
+| Not this file | What those folders must contain | `requirement-shell-cli-storage` |
+
+| Includes | Excludes |
+|----------|----------|
+| Prefix table including cache + persistence `util_*` helpers | Storage path law; command catalog |
+
+| You do… | What it means | What you type |
+|---------|---------------|---------------|
+| Look up who owns a helper | Storage path printers are `util_*`, not a second prefix. | open `./certbot-nginx` |
+
 ---
 
 ## 2. Core Rules / Requirements (Mandatory)
@@ -41,7 +59,7 @@ Optional multi-file layout under `src/` for future authoring **MAY** exist only 
 |--------|----------|---------|-------------------|
 | `out_` | Output system | All user-facing and machine-readable output | `out_text`, `out_info`, `out_success`, `out_json`, `out_die` |
 | `inst_` | Installation & self-management | Install, self-update, self-uninstall, install detect | `inst_perform_install`, `inst_self_update`, `inst_is_installed` |
-| `util_` | General utilities | Reusable helpers (backup, path resolve, storage) | `util_backup`, `util_resolve_storage`, `util_get_install_bin_path` |
+| `util_` | General utilities | Reusable helpers (backup, path resolve, cache + persistence) | `util_backup`, `util_resolve_storage`, `util_resolve_persistent_storage`, `util_get_install_bin_path` |
 | `app_` | General app CLI surface (product-neutral) | Entry, dispatch, about/help/version presentation | `app_main`, `app_about`, `app_help`, `app_version` |
 | `ver_` | Version comparison | Semantic version handling | `ver_gt`, `ver_check` |
 | `path_` | Shell PATH & environment | PATH manipulation and shell config | `path_add_shell`, `path_add_bashrc` |
@@ -163,7 +181,7 @@ This product **does not** use bootstrap `out_*` / `inst_*` / `app_*` names. Disk
 | Output wrappers | `info`, `success`, `warn`, `error`, `die`, `debug`, `msg`, `msg_n`, `empty_line`, `double_line` |
 | Install / Type 0 lifecycle | `perform_self_install_v2`, `maybe_install_v2`, `is_installed`, `get_installed_version`, `self_update_v2`, `self_uninstall`, `version_check` |
 | `ver_` | `ver_gt` |
-| `util_` | `util_resolve_storage` (wired from `main_certbot_nginx_app` / `show_nginx_system_diagnostics`) |
+| `util_` | `util_resolve_storage`, `util_resolve_persistent_storage`, `util_preferred_cache_dir`, `util_tmp_cache_dir`, `util_fallback_cache_dir`, `util_persistent_storage_dir` (wired from `main_certbot_nginx_app` / `show_nginx_system_diagnostics`) |
 | `prompt_` | `prompt_yes_no`, `prompt_ask` |
 | Dispatcher / CLI surface | `main_certbot_nginx_app`, `show_certbot_nginx_help`, `show_nginx_system_diagnostics` |
 | PATH | `add_to_shell_path` |

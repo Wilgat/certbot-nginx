@@ -24,10 +24,10 @@ Runner: `./tests/run.sh`
 | **TP-CLI-02** | version human + JSON | **have** | `test_cli.sh` |
 | **TP-CLI-03** | help Type 0 + domain; no CHECKSUM; no foreign DNA | **have** | `test_cli.sh` |
 | **TP-CLI-04** | help/about JSON purity | **have** | `test_cli.sh` |
-| **TP-CLI-05** | shell storage about fields | **have** | `test_cli.sh` about JSON `effective_storage` / `storage_dir` |
+| **TP-CLI-05** | cache + persistence about fields | **have** | `test_cli.sh` JSON `cache_preferred` / `cache_tmp` / `cache_fallback` / `persistence_storage` / `effective_storage` / `storage_dir`; human Cache folder (preferred)/(tmp)/(fallback)/(in use); fail-closed persistence mkdir |
 | **TP-CLI-06** | unknown command + JSON error | **have** | `test_cli.sh` |
 | **TP-CLI-07** | quiet / `-q` | **have** | `test_cli.sh` |
-| **TP-CLI-08** | `env -u HOME` | **have** | `test_cli.sh` |
+| **TP-CLI-08** | `env -u HOME` without developer-home mkdir | **have** | `test_cli.sh` stub `getent` |
 | **TP-CLI-09** | zero-arg bad channel loud fail | **have** | `test_cli.sh` |
 | **TP-CLI-11** | self-uninstall refuse JSON | **have** | `test_cli.sh` |
 

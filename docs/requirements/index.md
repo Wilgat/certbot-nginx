@@ -5,7 +5,7 @@
 **Bootstrap origin (A):** selfmanaged → **leaf (B):** certbot-nginx.  
 **Class law:** `requirement-class-software-dev` / **`RQ-CLASS-SOFTWARE-DEV`**.  
 **Domain SSOT:** `requirement-domain-certbot-nginx` / **`RQ-DOMAIN-CERTBOT-NGINX`**.  
-**Updated:** 2026-08-12
+**Updated:** 2026-08-30
 
 | Requirement-ID | Key | Title | Area | Status | Path | Updated |
 |----------------|-----|-------|------|--------|------|---------|
@@ -13,7 +13,7 @@
 | `RQ-BOOTSTRAP-CHAIN` | requirement-bootstrap-chain | Bootstrap chain (selfmanaged → certbot-nginx; A→B only) | architecture | Active | `requirement-bootstrap-chain.md` | 2026-08-12 |
 | `RQ-SHELL-AUTOMATIC-CHECKSUM` | requirement-shell-automatic-checksum | Automatic companion-digest integrity | shell | Active | `requirement-shell-automatic-checksum.md` | 2026-08-12 |
 | `RQ-SHELL-CLI-INTERFACE` | requirement-shell-cli-interface | Shell CLI interface (commands, flags, dispatch, modes) | shell | Active | `requirement-shell-cli-interface.md` | 2026-08-12 |
-| `RQ-SHELL-CLI-STORAGE` | requirement-shell-cli-storage | Scratch/cache storage resolve | shell | Active | `requirement-shell-cli-storage.md` | 2026-08-12 |
+| `RQ-SHELL-CLI-STORAGE` | requirement-shell-cli-storage | Cache folder + persistence folder resolve | shell | Active | `requirement-shell-cli-storage.md` | 2026-08-30 |
 | `RQ-SHELL-CLI-ZERO-ARGUMENTS` | requirement-shell-cli-zero-arguments | Empty argv Type O install-ensure | shell | Active | `requirement-shell-cli-zero-arguments.md` | 2026-08-12 |
 | `RQ-DOMAIN-CERTBOT-NGINX` | requirement-domain-certbot-nginx | Nginx + Certbot + Cloudflare + nginx-adm domain law (four pillars; EM-EXT) | domain | Active | `requirement-domain-certbot-nginx.md` | 2026-08-12 |
 | `RQ-NGINX-CONF` | requirement-nginx-conf | Nginx conf structure + domain-root defaults (term-aligned; artifacts, naming, locations, ownership) | webserver | Active | `requirement-nginx-conf.md` | 2026-08-12 |

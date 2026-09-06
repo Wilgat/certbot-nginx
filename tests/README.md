@@ -14,7 +14,7 @@ Requires: `sh`, `curl`, `python3` (local HTTP channel), `sha256sum`, `grep`.
 
 | Suite | File | Focus |
 |-------|------|--------|
-| CLI surface | `test_cli.sh` | `sh -n`, companion digest, version/help/about, domain help rows, unknown, quiet, no CHECKSUM, `env -u HOME`, zero-arg fail, self-uninstall fail-closed |
+| CLI surface | `test_cli.sh` | `sh -n`, companion digest, version/help/about (cache folder + persistence folder), domain help rows, unknown, quiet, no CHECKSUM, `env -u HOME`, zero-arg fail, self-uninstall fail-closed |
 | Install lifecycle | `test_install_lifecycle.sh` | Isolated HOME/USER_BIN/GLOBAL_BIN, local channel install, Type O empty argv, version-check, self-update latest, checksum transparency, pin match/mismatch, uninstall refuse/force |
 | Domain smoke | `test_domain_surface.sh` | Non-destructive: setup/run fail-closed without root, domains/email diagnostics, nginx-conf fail-closed, empty argv ≠ domain setup |
 

@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| **1.16.3** (current `main`) | Yes |
+| **1.16.4** (current `main`) | Yes |
+| **1.16.3** | Best-effort only |
 | **1.16.2** | Best-effort only |
 | **1.16.1** | Best-effort only |
 | Older releases | Best-effort only; no pledged backports |
@@ -66,7 +67,7 @@ Do not embed the expected digest of `./certbot-nginx` *inside* `./certbot-nginx`
 
 ---
 
-## Product security features (1.16.3)
+## Product security features (1.16.4)
 
 - **nginx-adm least-privilege model** — After initial setup, most config-test / service-control operations can run as the dedicated `nginx-adm` user instead of full root. Restricted sudoers allow only a narrow `systemctl` + `nginx -t` set (NOPASSWD).
 - **Strict setup sequence** — Certificates are obtained with `--standalone` *before* nginx site configs are written. Nginx is stopped early and must not run with incomplete or broken config. `nginx -t` must pass before reload/start that applies new configs.

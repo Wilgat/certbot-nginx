@@ -16,6 +16,24 @@ It defines lifecycle capabilities and safety rules for this shell project’s se
 
 **Must not confuse with:** OS package managers, domain product start/stop ops, dedicated system-user policy, or non-CLI “self-management.”
 
+### 1.1 Human-facing
+
+**In one sentence:** You use `certbot-nginx` to check, update, or remove **this program file**, and `about` tells you where it keeps its own folders.
+
+| Box | Meaning | Example |
+|-----|---------|---------|
+| You | Install, update, remove the program for this login | `self-update`, `self-uninstall`, `about` |
+| The other role | Nginx/Certbot host setup | `setup` is not self-management |
+| Not this file | Cache vs persistence path law | `requirement-shell-cli-storage` |
+
+| Includes | Excludes |
+|----------|----------|
+| `about` diagnostics including cache folder and persistence folder fields | Domain `setup`; checksum algorithm detail |
+
+| You do… | What it means | What you type |
+|---------|---------------|---------------|
+| Ask what is installed | About prints install status plus cache and persistence folders. | `certbot-nginx about` |
+
 ---
 
 ## 2. Core Rules / Requirements (Mandatory)
@@ -115,7 +133,7 @@ Root may write global install path; non-root uses user path. Do not assume root 
 | **Uninstall steps** | `self_uninstall` (resolve binary → `prompt_yes_no` unless `--force` → remove) |
 | **PATH ensure** | `add_to_shell_path` on user install |
 | **Privilege** | Type 0 only for self-management surface; no dedicated system user |
-| **Version SSOT** | `VERSION` default `1.16.3` in script config block (`VERSION="1.16.3"`) |
+| **Version SSOT** | `VERSION` default `1.16.4` in script config block (`VERSION="1.16.4"`) |
 
 #### Normative acceptance behaviors (this project)
 
@@ -126,7 +144,7 @@ Root may write global install path; non-root uses user path. Do not assume root 
    - If remote is **older** than local and force off → **refuse** (no silent downgrade).  
    - If remote is newer (or force policy allows reinstall) → set reinstall and call `perform_self_install_v2` with integrity + atomic replace.  
 3. **`self-uninstall`:** Resolve binary; confirm when interactive and force off; remove only that binary; clean PATH only if `~/.local/bin` empty (non-root); never delete unrelated trees.  
-4. **`about`:** Human diagnostics + JSON about object; no secrets; **no `CHECKSUM` name/value**.  
+4. **`about`:** Human diagnostics + JSON about object; cache folder **and** persistence folder fields (`requirement-shell-cli-storage`); no secrets; **no `CHECKSUM` name/value**.  
 5. **Shared install path:** Self-update **must not** introduce a parallel curl-to-final-path overwrite outside `perform_self_install_v2`.
 
 #### Compliance notes (implementation status)

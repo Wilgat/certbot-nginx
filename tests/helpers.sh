@@ -68,6 +68,18 @@ _trunc() {
     printf '%s' "$1" | tr '\n' ' ' | cut -c1-160
 }
 
+# json_get KEY JSON — parse compact/pretty JSON; empty string if missing.
+json_get() {
+    _key="$1"
+    _json="$2"
+    printf '%s\n' "$_json" | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+v=d.get(sys.argv[1],"")
+if v is None:
+    v=""
+print(v)' "$_key"
+}
+
 # Local HTTP channel serving ship unit + companion .sha256 (bare hex)
 ci_start_channel() {
     CI_CHANNEL_DIR=$(mktemp -d "${TMPDIR:-/tmp}/cn-channel.XXXXXX")
@@ -119,6 +131,7 @@ ci_isolated_env() {
     unset CHECKSUM 2>/dev/null || true
     unset FORCE_USER 2>/dev/null || true
     unset FORCE_REINSTALL 2>/dev/null || true
+    unset XDG_CACHE_HOME STORAGE_DIR PERSISTENT_STORAGE_DIR EFFECTIVE_STORAGE_DIR 2>/dev/null || true
 }
 
 ci_cleanup_env() {
@@ -128,7 +141,7 @@ ci_cleanup_env() {
         CI_USER_BIN=
         CI_GLOBAL_BIN=
     fi
-    unset GLOBAL_BIN FORCE_GLOBAL 2>/dev/null || true
+    unset GLOBAL_BIN FORCE_GLOBAL HOME 2>/dev/null || true
 }
 
 require_cmd() {

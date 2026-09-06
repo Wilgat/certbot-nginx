@@ -14,6 +14,24 @@ It defines a **Type 0–centric self-managed shell CLI** (install / update / uni
 **Scope:** User-facing command names, flags, dispatch, privilege labels, and mode contracts.  
 **Out of scope (own requirements when specialized):** Online-install checksum mechanics detail, self-management safety beyond the command surface, shell coding style, full output-function catalog (cited, not re-owned).
 
+### 1.1 Human-facing
+
+**In one sentence:** You type `certbot-nginx help` and see the commands this program offers you: install and self-care as yourself, and `setup` when you are allowed to change the computer.
+
+| Box | Meaning | Example |
+|-----|---------|---------|
+| You | Commands you run with your own login | `version`, `about`, `help`, `self-update` |
+| The other role | Commands that change the computer | `setup` (needs root) |
+| Not this file | Where cache and persistence folders live | `requirement-shell-cli-storage` |
+
+| Includes | Excludes |
+|----------|----------|
+| Command names, flags, `about` listing cache + persistence fields | Folder-create rules (storage REQ); install checksum internals |
+
+| You do… | What it means | What you type |
+|---------|---------------|---------------|
+| See the menu | Help lists install, about, setup. About names cache and persistence folders. | `certbot-nginx help` |
+
 ---
 
 ## 2. Core Rules / Requirements (Mandatory)
@@ -111,7 +129,7 @@ When specializing product **B** from this bootstrap (**A → B only**):
 | **Primary executable** | Repo root `./certbot-nginx` (POSIX `/bin/sh`, single-file for `curl \| sh`) |
 | **Dispatcher** | `main_certbot_nginx_app` (always invoked at end of script — no `${0##*/}` / APP_NAME basename gate; required for `curl \| sh`) |
 | **Output SSOT** | Centralized helpers: `info` / `success` / `warn` / `error` / `msg` / `output_json` / `output_json_error` (naming differs from pure bootstrap `out_*`; same single-output intent) |
-| **Version SSOT** | `VERSION` default `1.16.3` (script header / config block: `VERSION="1.16.3"`) |
+| **Version SSOT** | `VERSION` default `1.16.4` (script header / config block: `VERSION="1.16.4"`) |
 | **Install paths** | Global: `GLOBAL_BIN` default `/usr/local/bin`; User: `USER_BIN` default `${HOME}/.local/bin` |
 | **Remote channel env (help surface)** | `REPO_USER` / `REPO_NAME` (defaults `Wilgat` / `certbot-nginx`); `SCRIPT_URL` composed default (literal: `https://raw.githubusercontent.com/Wilgat/certbot-nginx/main/certbot-nginx`). **`help` / `about` MUST NOT list `CHECKSUM`** |
 | **Type 1 / Type 2 commands** | Domain `setup` is privileged host mutation (root); Type 0 CLI lifecycle is invoker-scoped |
@@ -126,7 +144,7 @@ When specializing product **B** from this bootstrap (**A → B only**):
 | `install` | Type 0 | `maybe_install_v2` / `perform_self_install_v2` | Install CLI; idempotent unless force reinstall |
 | `setup` / `run` | Domain | `run_interactive_setup` / `run_non_interactive_setup` | Full Nginx + Certbot setup (root); domain SSOT |
 | `version` | Type 0 | dispatch | Print local version; JSON when `--json` |
-| `about` | Type 0 + domain extras | `show_nginx_system_diagnostics` | Install + nginx platform diagnostics; no CHECKSUM value |
+| `about` | Type 0 + domain extras | `show_nginx_system_diagnostics` | Install + nginx platform diagnostics; cache folder **and** persistence folder fields; no CHECKSUM value |
 | `version-check` | Type 0 | `version_check` | Local vs remote VERSION from SCRIPT_URL |
 | `self-update` | Type 0 | `self_update_v2` | Update CLI via install primitives |
 | `self-uninstall` | Type 0 | `self_uninstall` | Remove managed CLI binary |

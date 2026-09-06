@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.4] - 2026-09-06
+
+### Added
+- Persistence folder `${HOME}/.local/certbot-nginx` (`util_resolve_persistent_storage`), wired from `main_certbot_nginx_app`.
+- `about` names **Cache folder (preferred)/(tmp)/(fallback)/(in use)** and **Persistence storage** (JSON: `cache_preferred`, `cache_tmp`, `cache_fallback`, `persistence_storage`, `effective_storage`).
+
+### Changed
+- `RQ-SHELL-CLI-STORAGE` now owns **both** the cache folder and the persistence folder (not cache-only).
+- Cache create fail-closed also requires the chosen root to be writable; `--json` is honored before storage mkdir.
+- Storage resolvers run in the main process so a failed mkdir `die`s instead of being captured by `$(…)`.
+
 ## [1.16.3] - 2026-08-18
 
 ### Changed

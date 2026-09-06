@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# certbot-nginx – version 1.16.3
+# certbot-nginx – version 1.16.4
 # =============================================================================
 #
 # One-command installer for Certbot and nginx
@@ -322,7 +322,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="certbot-nginx"
-VERSION="1.16.3"
+VERSION="1.16.4"
 DESCRIPTION="Certbot and nginx quick setup"
 REMOTE_VERSION=$VERSION
 SH=sh
@@ -543,6 +543,7 @@ USERNAME="$(id -un 2>/dev/null || echo "unknown")"
 : "${USERNAME:=unknown}"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 : "${STORAGE_DIR:=${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}}"
+: "${PERSISTENT_STORAGE_DIR:=${HOME}/.local/${APP_NAME}}"
 : "${AUTO_CHECKSUM_OK:=0}"
 
 # =============================================================================
@@ -760,6 +761,113 @@ debug() {
 }
 
 # =============================================================================
+# util_preferred_cache_dir() - Preferred cache folder path (class B return)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Print the preferred cache folder path. Does not create it.
+#
+# ALIGNMENT:
+# - docs/requirements/requirement-shell-cli-storage.md
+#
+# Last updated: 2026-08-30
+# =============================================================================
+util_preferred_cache_dir() {
+    : "${APP_NAME:=certbot-nginx}"
+    : "${USERNAME:=unknown}"
+    printf '%s' "/dev/shm/${APP_NAME}-${USERNAME}"
+}
+
+# =============================================================================
+# util_tmp_cache_dir() - /tmp cache folder path (class B return)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Print the /tmp cache folder path (resolve tier 2). Does not create it.
+#
+# ALIGNMENT:
+# - docs/requirements/requirement-shell-cli-storage.md
+#
+# Last updated: 2026-09-06
+# =============================================================================
+util_tmp_cache_dir() {
+    : "${APP_NAME:=certbot-nginx}"
+    : "${USERNAME:=unknown}"
+    printf '%s' "/tmp/${APP_NAME}-${USERNAME}"
+}
+
+# =============================================================================
+# util_fallback_cache_dir() - Fallback cache folder path (class B return)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Print the user-cache fallback folder path (STORAGE_DIR / XDG). Does not create it.
+#
+# ALIGNMENT:
+# - docs/requirements/requirement-shell-cli-storage.md
+#
+# Last updated: 2026-09-06
+# =============================================================================
+util_fallback_cache_dir() {
+    : "${HOME:=/tmp}"
+    : "${APP_NAME:=certbot-nginx}"
+    : "${USERNAME:=unknown}"
+    : "${XDG_CACHE_HOME:=${HOME}/.cache}"
+    : "${STORAGE_DIR:=${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}}"
+    printf '%s' "${STORAGE_DIR}"
+}
+
+# =============================================================================
+# util_persistent_storage_dir() - Persistence folder path (class B return)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Print the Type 0 persistence folder (${HOME}/.local/${APP_NAME}).
+# Does not create it. MUST NOT return USER_BIN (${HOME}/.local/bin).
+#
+# ALIGNMENT:
+# - docs/requirements/requirement-shell-cli-storage.md
+#
+# Last updated: 2026-08-30
+# =============================================================================
+util_persistent_storage_dir() {
+    : "${HOME:=/tmp}"
+    : "${APP_NAME:=certbot-nginx}"
+    printf '%s' "${HOME}/.local/${APP_NAME}"
+}
+
+# =============================================================================
+# util_resolve_persistent_storage() - Create persistence folder (class B return)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Create ${HOME}/.local/${APP_NAME} (fail closed) and print the path.
+# MUST NOT use ${HOME}/.local/bin (install bin).
+#
+# ALIGNMENT:
+# - docs/requirements/requirement-shell-cli-storage.md
+#
+# Last updated: 2026-08-30
+# =============================================================================
+util_resolve_persistent_storage() {
+    : "${HOME:=/tmp}"
+    : "${APP_NAME:=certbot-nginx}"
+    _persist=$(util_persistent_storage_dir)
+    case "${_persist}" in
+        */.local/bin|*/.local/bin/)
+            die "Persistence folder must not be the install bin directory ${_persist}. Next: certbot-nginx about"
+            ;;
+    esac
+    if ! mkdir -p "${_persist}" 2>/dev/null || [ ! -w "${_persist}" ]; then
+        # MUST run in the main process (not $(…)): die inside command substitution
+        # only exits the subshell and leaks JSON onto stdout.
+        die "Could not create persistence folder at ${_persist}. Check that this login can write under ${HOME}/.local. Next: certbot-nginx about"
+    fi
+    PERSISTENT_STORAGE_DIR="${_persist}"
+    unset _persist
+}
+
+# =============================================================================
 # util_resolve_storage() - Isolated Type 0 scratch/cache root
 # =============================================================================
 #
@@ -770,7 +878,7 @@ debug() {
 # ALIGNMENT:
 # - docs/requirements/requirement-shell-cli-storage.md
 #
-# Last reviewed: 2026-08-18
+# Last updated: 2026-08-30
 # =============================================================================
 util_resolve_storage() {
     : "${HOME:=/tmp}"
@@ -788,10 +896,12 @@ util_resolve_storage() {
         chosen="${STORAGE_DIR}"
     fi
 
-    if ! mkdir -p "${chosen}" 2>/dev/null; then
-        die "Could not create isolated scratch directory at ${chosen}."
+    if ! mkdir -p "${chosen}" 2>/dev/null || [ ! -w "${chosen}" ]; then
+        # MUST run in the main process (not $(…)): die inside command substitution
+        # only exits the subshell and leaks JSON onto stdout.
+        die "Could not create cache folder at ${chosen}. Next: certbot-nginx about"
     fi
-    printf '%s\n' "${chosen}"
+    EFFECTIVE_STORAGE_DIR="${chosen}"
 }
 
 # =============================================================================
@@ -1824,6 +1934,8 @@ detect_nginx_platform_paths() {
 #
 # !!! THIS IS THE MAIN DIAGNOSTICS ENTRY POINT !!!
 # !!! DO NOT RENAME AGAIN WITHOUT EXPLICIT USER INSTRUCTION !!!
+#
+# Last updated: 2026-08-30
 # =============================================================================
 
 show_nginx_system_diagnostics() {
@@ -1867,6 +1979,10 @@ show_nginx_system_diagnostics() {
             "nginx_conf_root" "${NGINX_CONF_ROOT}" \
             "nginx_sites_available" "${NGINX_SITES_AVAILABLE}" \
             "nginx_sites_enabled" "${NGINX_SITES_ENABLED}" \
+            "cache_preferred" "$(util_preferred_cache_dir)" \
+            "cache_tmp" "$(util_tmp_cache_dir)" \
+            "cache_fallback" "$(util_fallback_cache_dir)" \
+            "persistence_storage" "${PERSISTENT_STORAGE_DIR:-$(util_persistent_storage_dir)}" \
             "effective_storage" "${EFFECTIVE_STORAGE_DIR:-}" \
             "storage_dir" "${STORAGE_DIR:-}"
 
@@ -1925,8 +2041,11 @@ show_nginx_system_diagnostics() {
     msg "Sites Available:   ${NGINX_SITES_AVAILABLE}"
     msg "Sites Enabled:     ${NGINX_SITES_ENABLED}"
     msg "Conf.d directory:  ${NGINX_CONF_D}"
-    msg "Effective storage: ${EFFECTIVE_STORAGE_DIR:-}"
-    msg "Storage fallback:  ${STORAGE_DIR:-}"
+    msg "Cache folder (preferred): $(util_preferred_cache_dir)"
+    msg "Cache folder (tmp):       $(util_tmp_cache_dir)"
+    msg "Cache folder (fallback):  $(util_fallback_cache_dir)"
+    msg "Cache folder (in use):    ${EFFECTIVE_STORAGE_DIR:-}"
+    msg "Persistence storage:      ${PERSISTENT_STORAGE_DIR:-$(util_persistent_storage_dir)}"
 
     empty_line
     msg "Use '${APP_NAME} about' to see this information again."
@@ -4088,8 +4207,21 @@ main_certbot_nginx_app() {
     : "${USERNAME:=unknown}"
     : "${XDG_CACHE_HOME:=${HOME}/.cache}"
     : "${STORAGE_DIR:=${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}}"
-    EFFECTIVE_STORAGE_DIR=$(util_resolve_storage)
+    : "${PERSISTENT_STORAGE_DIR:=${HOME}/.local/${APP_NAME}}"
+    # Honor --json/--quiet for fail-closed storage before the flag-first parse loop.
+    for _early_arg in "$@"; do
+        case "${_early_arg}" in
+            --json) JSON=1; QUIET=1 ;;
+            --quiet|-q) QUIET=1 ;;
+        esac
+    done
+    unset _early_arg
+    # Invoke in this shell so die fail-closes (do not capture with $(…)
+    # and do not redirect stdout — JSON die must reach the caller).
+    util_resolve_storage
+    util_resolve_persistent_storage
     export EFFECTIVE_STORAGE_DIR
+    export PERSISTENT_STORAGE_DIR
     export STORAGE_DIR
     export TMPDIR="${EFFECTIVE_STORAGE_DIR}"
 
